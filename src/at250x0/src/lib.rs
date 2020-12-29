@@ -4,7 +4,7 @@
 mod adapters;
 mod aligned_chunks;
 mod drv;
-mod upcode;
+mod opcode;
 
 pub use self::{
     adapters::chip::At250x0Chip,

@@ -1,4 +1,4 @@
-use crate::{aligned_chunks::SliceExt, upcode::Upcode, At250x0Chip, At250x0Spi, At250x0Timer};
+use crate::{aligned_chunks::SliceExt, opcode::Opcode, At250x0Chip, At250x0Spi, At250x0Timer};
 use core::{cell::RefCell, marker::PhantomData};
 use drone_core::bitfield::Bitfield;
 
@@ -52,7 +52,7 @@ impl<Timer: At250x0Timer<A>, A> At250x0Drv<Timer, A> {
         assert!(origin + buf.len() as u16 <= capacity(self.kind));
 
         chip.select();
-        spi.write(&[Upcode::READ(origin).val(), (origin & 0xFF) as u8])
+        spi.write(&[Opcode::READ(origin).val(), (origin & 0xFF) as u8])
             .await;
         spi.read(buf).await;
         chip.deselect();
@@ -77,7 +77,7 @@ impl<Timer: At250x0Timer<A>, A> At250x0Drv<Timer, A> {
 
         // Enable write.
         chip.select();
-        spi.write(&[Upcode::WREN.val()]).await;
+        spi.write(&[Opcode::WREN.val()]).await;
         chip.deselect();
 
         // Wait until we can send a new spi command.
@@ -92,7 +92,7 @@ impl<Timer: At250x0Timer<A>, A> At250x0Drv<Timer, A> {
                 if !write_enabled {
                     // Enable write.
                     chip.select();
-                    spi.write(&[Upcode::WREN.val()]).await;
+                    spi.write(&[Opcode::WREN.val()]).await;
                     chip.deselect();
                 }
 
@@ -126,7 +126,7 @@ impl<Timer: At250x0Timer<A>, A> At250x0Drv<Timer, A> {
         assert!(buf.len() <= PAGE_SIZE - (address as usize % PAGE_SIZE));
 
         chip.select();
-        spi.write(&[Upcode::WRITE(address).val(), (address & 0xFF) as u8])
+        spi.write(&[Opcode::WRITE(address).val(), (address & 0xFF) as u8])
             .await;
         spi.write(buf).await;
         chip.deselect();
@@ -155,7 +155,7 @@ impl<Timer: At250x0Timer<A>, A> At250x0Drv<Timer, A> {
         Spi: At250x0Spi<A>,
         Chip: At250x0Chip<A>,
     {
-        const CMD: [u8; 2] = [Upcode::RDSR.val(), 0x00];
+        const CMD: [u8; 2] = [Opcode::RDSR.val(), 0x00];
         let mut rx: [u8; 2] = [0x00, 0x00];
 
         chip.select();

@@ -1,10 +1,8 @@
-use crate::{aligned_chunks::SliceExt, opcode::Opcode, At250x0Chip, At250x0Spi, At250x0Timer};
-use core::{cell::RefCell, marker::PhantomData};
+use crate::{aligned_chunks::SliceExt, opcode::Opcode, At250x0Chip, At250x0Spi};
+use core::marker::PhantomData;
 use drone_core::bitfield::Bitfield;
-
-const PAGE_SIZE: usize = 8;
-const INITIAL_TIMEOUT_US: u32 = 3000; // Wait at least 3 ms
-const RETRY_INTERVAL_US: u32 = 100;
+use drone_time::{Alarm, Tick, TimeSpan};
+use alloc::sync::Arc;
 
 #[derive(Clone, Copy)]
 pub enum At250x0Kind {
@@ -15,6 +13,8 @@ pub enum At250x0Kind {
     At25020b,
     At25040b,
 }
+
+const PAGE_SIZE: usize = 8;
 
 #[derive(Clone, Copy, Bitfield)]
 #[bitfield(
@@ -28,18 +28,23 @@ struct StatusRegister(u8);
 #[derive(Debug)]
 pub struct WriteProtectError;
 
-pub struct At250x0Drv<Timer: At250x0Timer<A>, A> {
+pub struct At250x0Drv<Al: Alarm<T>, T: Tick, A> {
     kind: At250x0Kind,
-    timer: RefCell<Timer>,
-    adapters: PhantomData<A>,
+    alarm: Arc<Al>,
+    tick: PhantomData<T>,
+    adapter: PhantomData<A>,
 }
 
-impl<Timer: At250x0Timer<A>, A> At250x0Drv<Timer, A> {
-    pub fn new(kind: At250x0Kind, timer: Timer) -> Self {
+impl<Al: Alarm<T>, T: Tick, A> At250x0Drv<Al, T, A> {
+    const INITIAL_TIMEOUT: TimeSpan<T> = TimeSpan::from_millis(3); // Wait at least 3 ms
+    const RETRY_INTERVAL: TimeSpan<T> = TimeSpan::from_micros(100);
+
+    pub fn new(kind: At250x0Kind, alarm: Arc<Al>) -> Self {
         Self {
             kind,
-            timer: RefCell::new(timer),
-            adapters: PhantomData,
+            alarm,
+            tick: PhantomData,
+            adapter: PhantomData,
         }
     }
 
@@ -72,16 +77,15 @@ impl<Timer: At250x0Timer<A>, A> At250x0Drv<Timer, A> {
     {
         assert!(origin + buf.len() as u16 <= capacity(self.kind));
 
-        let t_cs = min_tcs_ns(self.kind);
-        let mut timer = self.timer.borrow_mut();
+        let t_cs = min_tcs::<T>(self.kind);
 
-        // Enable write.
+        // TimeSpan<T> write.
         chip.select();
         spi.write(&[Opcode::WREN.val()]).await;
         chip.deselect();
 
         // Wait until we can send a new spi command.
-        timer.sleep_ns(t_cs).await;
+        self.alarm.sleep(t_cs).await;
 
         // See if write was enabled (it may have been disabled by the WP pin).
         let sr = self.read_status_register(spi, chip).await;
@@ -97,9 +101,9 @@ impl<Timer: At250x0Timer<A>, A> At250x0Drv<Timer, A> {
                 }
 
                 // Wait until we can send a new spi command.
-                timer.sleep_ns(t_cs).await;
+                self.alarm.sleep(t_cs).await;
 
-                self.write_page(spi, chip, &mut timer, address as u16, slice)
+                self.write_page(spi, chip, address as u16, slice)
                     .await;
 
                 // Write is auto-disabled after sending a WRITE command.
@@ -115,15 +119,15 @@ impl<Timer: At250x0Timer<A>, A> At250x0Drv<Timer, A> {
         &self,
         spi: &mut Spi,
         chip: &mut Chip,
-        timer: &mut Timer,
         address: u16,
         buf: &[u8],
     ) where
         Spi: At250x0Spi<A>,
         Chip: At250x0Chip<A>,
     {
-        assert!(buf.len() > 0);
-        assert!(buf.len() <= PAGE_SIZE - (address as usize % PAGE_SIZE));
+        let len = buf.len();
+        assert!(len > 0);
+        assert!(len <= PAGE_SIZE - (address as usize % PAGE_SIZE));
 
         chip.select();
         spi.write(&[Opcode::WRITE(address).val(), (address & 0xFF) as u8])
@@ -132,11 +136,11 @@ impl<Timer: At250x0Timer<A>, A> At250x0Drv<Timer, A> {
         chip.deselect();
 
         // Wait for idle.
-        timer.sleep_us(INITIAL_TIMEOUT_US).await;
+        self.alarm.sleep(Self::INITIAL_TIMEOUT).await;
         let sr = self.read_status_register(spi, chip).await;
         if sr.bsy() {
             loop {
-                timer.sleep_us(RETRY_INTERVAL_US).await;
+                self.alarm.sleep(Self::RETRY_INTERVAL).await;
 
                 let sr = self.read_status_register(spi, chip).await;
                 if !sr.bsy() {
@@ -179,13 +183,13 @@ const fn capacity(kind: At250x0Kind) -> u16 {
 }
 
 /// Get the minimum t_cs time in ns, i.e. the minimum time the CS pin must be de-asserted betweeen commands.
-const fn min_tcs_ns(kind: At250x0Kind) -> u32 {
-    match kind {
-        At250x0Kind::At25010 => 250,
-        At250x0Kind::At25020 => 250,
-        At250x0Kind::At25040 => 250,
-        At250x0Kind::At25010b => 100,
-        At250x0Kind::At25020b => 100,
-        At250x0Kind::At25040b => 100,
+const fn min_tcs<T: Tick>(kind: At250x0Kind) -> TimeSpan<T> {
+        match kind {
+        At250x0Kind::At25010 => TimeSpan::from_nanos(250),
+        At250x0Kind::At25020 => TimeSpan::from_nanos(250),
+        At250x0Kind::At25040 => TimeSpan::from_nanos(250),
+        At250x0Kind::At25010b => TimeSpan::from_nanos(100),
+        At250x0Kind::At25020b => TimeSpan::from_nanos(100),
+        At250x0Kind::At25040b => TimeSpan::from_nanos(100),
     }
 }

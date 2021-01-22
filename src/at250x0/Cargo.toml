@@ -18,6 +18,10 @@ maintenance = { status = "actively-developed" }
 
 [features]
 default = []
+stm32f4 = [
+    "drone-stm32-map",
+    "drone-stm32f4-hal",
+]
 std = [
     "drone-core/std",
     "drone-cortexm/std",
@@ -25,6 +29,9 @@ std = [
 
 [dependencies]
 drone-core = { version = "0.14.0", path = "../../../drone-core" }
+drone-time = { version = "0.1.0", path = "../../../drone-time" }
+drone-stm32-map = { version = "0.14.0", features = ["spi"], path = "../../../drone-stm32-map", optional = true }
+drone-stm32f4-hal = { version = "0.1.0", features = ["spi"], path = "../../../drone-stm32f4-hal", optional = true }
 async-trait = "0.1"
 futures = { version = "0.3.0", default-features = false }
 

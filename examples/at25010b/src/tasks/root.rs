@@ -1,15 +1,15 @@
 //! The root task.
 
-use core::convert::TryInto;
-
-use crate::{consts, thr, thr::ThrsInit, Regs};
+use crate::{Regs, consts::{self, SysTickTick}, thr, thr::ThrsInit};
+use alloc::sync::Arc;
 use drone_at250x0_drv::{At250x0Drv, At250x0Kind};
 use drone_core::log;
-use drone_cortexm::{drv::sys_tick::SysTick, reg::prelude::*, swo, thr::prelude::*};
+use drone_cortexm::{reg::prelude::*, swo, thr::prelude::*};
 use drone_stm32_map::periph::{
     dma::{periph_dma2, periph_dma2_ch2, periph_dma2_ch3},
     gpio::{
         periph_gpio_a5, periph_gpio_a6, periph_gpio_a7, periph_gpio_a_head, periph_gpio_i1,
+        periph_gpio_b_head, periph_gpio_b0,
         periph_gpio_i_head,
     },
     spi::periph_spi1,
@@ -21,6 +21,7 @@ use drone_stm32f4_hal::{
     rcc::{periph_flash, periph_pwr, periph_rcc, traits::*, Flash, Pwr, Rcc, RccSetup},
     spi::{chipctrl::*, config::*, prelude::*, SpiDrv},
 };
+use drone_time::{AlarmDrv,drivers::SysTickAlarmDrv};
 
 /// The root task handler.
 #[inline(never)]
@@ -58,33 +59,37 @@ pub fn handler(reg: Regs, thr_init: ThrsInit) {
 
     // Enable IO port clock.
     let gpio_a = GpioHead::with_enabled_clock(periph_gpio_a_head!(reg));
+    let gpio_b = GpioHead::with_enabled_clock(periph_gpio_b_head!(reg));
     let gpio_i = GpioHead::with_enabled_clock(periph_gpio_i_head!(reg));
 
     // Configure SPI GPIO pins.
     let pin_sck = gpio_a
         .pin(periph_gpio_a5!(reg))
-        .into_af()
-        .into_pp()
+        .into_alternate()
+        .into_pushpull()
         .into_nopull()
         .with_speed(GpioPinSpeed::HighSpeed);
     let pin_miso = gpio_a
         .pin(periph_gpio_a6!(reg))
-        .into_af()
-        .into_pp()
+        .into_alternate()
+        .into_pushpull()
         .into_nopull()
         .with_speed(GpioPinSpeed::HighSpeed);
     let pin_mosi = gpio_a
         .pin(periph_gpio_a7!(reg))
-        .into_af()
-        .into_pp()
+        .into_alternate()
+        .into_pushpull()
         .into_nopull()
         .with_speed(GpioPinSpeed::HighSpeed);
     let pin_cs = gpio_i
         .pin(periph_gpio_i1!(reg))
         .into_output()
-        .into_pp()
+        .into_pushpull()
         .into_pullup()
         .with_speed(GpioPinSpeed::HighSpeed);
+
+    // Deselect other SPI devices on same bus
+    gpio_b.pin(periph_gpio_b0!(reg)).into_output().into_pushpull().set();
 
     // Initialize dma.
     let dma2 = DmaCfg::with_enabled_clock(periph_dma2!(reg));
@@ -93,9 +98,9 @@ pub fn handler(reg: Regs, thr_init: ThrsInit) {
 
     // Initialize spi.
     let pins = SpiPins::default()
-        .sck(&pin_sck)
-        .miso(&pin_miso)
-        .mosi(&pin_mosi);
+        .sck(pin_sck)
+        .miso(pin_miso)
+        .mosi(pin_mosi);
     let setup = SpiSetup::new(
         periph_spi1!(reg),
         thr.spi_1,
@@ -106,10 +111,11 @@ pub fn handler(reg: Regs, thr_init: ThrsInit) {
     let spi_drv = SpiDrv::init(setup);
     let mut spi = spi_drv.init_master(miso_dma, mosi_dma);
 
-    let mut chip = SpiChip::init(pin_cs);
-
-    let timer = SysTick::new(periph_sys_tick!(reg), thr.sys_tick);
-    let eeprom = At250x0Drv::new(At250x0Kind::At25010b, timer);
+    let mut chip = SpiChip::as_deselected(pin_cs);
+    
+    let systick = SysTickAlarmDrv::new(periph_sys_tick!(reg), thr.sys_tick);
+    let alarm = Arc::new(AlarmDrv::new(systick.counter, systick.timer, SysTickTick));
+    let eeprom = At250x0Drv::new(At250x0Kind::At25010b, alarm);
 
     const TMIB_2030: [u8; 48] = [
         0x74, 0x6D, 0x02, 0x63, 0x72, 0x6D, 0x33, 0x30, 0x39, 0x35, 0x30, 0x62, 0x2D, 0x31, 0x00,
@@ -118,12 +124,14 @@ pub fn handler(reg: Regs, thr_init: ThrsInit) {
         0x00, 0x98, 0x9C,
     ];
 
+    let mut buf = [0u8; 48];
+    eeprom.read(&mut spi, &mut chip, 0x00, &mut buf).root_wait();
+
     eeprom
         .write(&mut spi, &mut chip, 0x00, &TMIB_2030)
         .root_wait()
         .unwrap();
 
-    let mut buf = [0u8; 48];
     eeprom.read(&mut spi, &mut chip, 0x00, &mut buf).root_wait();
 
     // Enter a sleep state on ISR exit.

@@ -25,6 +25,10 @@ impl<Pin: GpioPinMap, PinType, PinPull> Cc1200Chip<Adapter>
             DmaTxInt: IntToken,
         > Cc1200Spi<Adapter> for SpiMasterDrv<'_, Spi, DmaRx, DmaRxInt, DmaTx, DmaTxInt>
     {
+        async fn read(&mut self, rx: &mut [u8]) {
+            self.read(rx).await;
+        }
+        
         async fn write(&mut self, tx: &[u8]) {
             self.write(tx).await;
         }

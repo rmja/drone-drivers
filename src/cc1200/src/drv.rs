@@ -1,6 +1,6 @@
 use crate::{Cc1200Chip, Cc1200Config, Cc1200Port, Cc1200Spi, StatusByte, opcode::{ExtReg, Opcode, Reg, Strobe}};
 use alloc::sync::Arc;
-use core::cell::Cell;
+use core::{cell::Cell, mem::replace};
 use core::marker::PhantomData;
 use drone_time::{Alarm, Tick, TimeSpan};
 use futures::future::{self, Either};
@@ -82,37 +82,105 @@ impl<Port: Cc1200Port, Al: Alarm<T>, T: Tick, A> Cc1200Drv<Port, Al, T, A> {
         config: &Cc1200Config<'_>
     ) {
         if !config.values.is_empty() {
-            let len = config.values.len();
-            let opcode = if len == 1 {
-                Opcode::WriteSingle(config.first)
-            } else {
-                Opcode::WriteBurst(config.first)
-            };
-            let mut tx = Vec::with_capacity(1 + len);
-            tx.push(opcode.val());
-            tx.extend_from_slice(config.values);
-
-            chip.select();
-            spi.write(&tx).await;
-            chip.deselect();
+            self.write_regs(spi, chip, config.first, config.values).await;
         }
 
         if !config.ext_values.is_empty() {
-            let len = config.ext_values.len();
-            let opcode = if len == 1 {
-                Opcode::WriteSingle(Reg::EXTENDED_ADDRESS)
-            } else {
-                Opcode::WriteBurst(Reg::EXTENDED_ADDRESS)
-            };
-            let mut tx = Vec::with_capacity(2 + len);
-            tx.push(opcode.val());
-            tx.push(config.ext_first as u8);
-            tx.extend_from_slice(config.ext_values);
-
-            chip.select();
-            spi.write(&tx).await;
-            chip.deselect();
+            self.write_ext_regs(spi, chip, config.ext_first, config.ext_values).await;
         }
+    }
+
+    pub async fn read_regs<Spi: Cc1200Spi<A>, Chip: Cc1200Chip<A>>(
+        &self,
+        spi: &mut Spi,
+        chip: &mut Chip,
+        first: Reg,
+        buf: &mut [u8]
+    ) {
+        let len = buf.len();
+        let opcode = if len == 1 {
+            Opcode::ReadSingle(first)
+        } else {
+            Opcode::ReadBurst(first)
+        };
+        let tx = &[opcode.val()];
+        let mut rx_buf = [0];
+
+        chip.select();
+        spi.xfer(tx, &mut rx_buf).await;
+        self.status.set(StatusByte(rx_buf[0]));
+        spi.read(buf).await;
+        chip.deselect();
+    }
+
+    pub async fn read_ext_regs<Spi: Cc1200Spi<A>, Chip: Cc1200Chip<A>>(
+        &self,
+        spi: &mut Spi,
+        chip: &mut Chip,
+        first: ExtReg,
+        buf: &mut [u8]
+    ) {
+        let len = buf.len();
+        let opcode = if len == 1 {
+            Opcode::ReadSingle(Reg::EXTENDED_ADDRESS)
+        } else {
+            Opcode::ReadBurst(Reg::EXTENDED_ADDRESS)
+        };
+        let tx = &[opcode.val(), first as u8];
+        let mut rx_buf = [0, 0];
+
+        chip.select();
+        spi.xfer(tx, &mut rx_buf).await;
+        self.status.set(StatusByte(rx_buf[0]));
+        spi.read(buf).await;
+        chip.deselect();
+    }
+
+    /// Write register values.
+    pub async fn write_regs<Spi: Cc1200Spi<A>, Chip: Cc1200Chip<A>>(
+        &self,
+        spi: &mut Spi,
+        chip: &mut Chip,
+        first: Reg,
+        values: &[u8]
+    ) {
+        let len = values.len();
+        let opcode = if len == 1 {
+            Opcode::WriteSingle(first)
+        } else {
+            Opcode::WriteBurst(first)
+        };
+        let mut tx = Vec::with_capacity(1 + len);
+        tx.push(opcode.val());
+        tx.extend_from_slice(values);
+
+        chip.select();
+        spi.write(&tx).await;
+        chip.deselect();
+    }
+
+    /// Write extended register values.
+    pub async fn write_ext_regs<Spi: Cc1200Spi<A>, Chip: Cc1200Chip<A>>(
+        &self,
+        spi: &mut Spi,
+        chip: &mut Chip,
+        first: ExtReg,
+        values: &[u8]
+    ) {
+        let len = values.len();
+        let opcode = if len == 1 {
+            Opcode::WriteSingle(Reg::EXTENDED_ADDRESS)
+        } else {
+            Opcode::WriteBurst(Reg::EXTENDED_ADDRESS)
+        };
+        let mut tx = Vec::with_capacity(2 + len);
+        tx.push(opcode.val());
+        tx.push(first as u8);
+        tx.extend_from_slice(values);
+
+        chip.select();
+        spi.write(&tx).await;
+        chip.deselect();
     }
 
     pub async fn read_rssi<Spi: Cc1200Spi<A>, Chip: Cc1200Chip<A>>(

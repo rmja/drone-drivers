@@ -77,7 +77,7 @@ impl<Al: Alarm<T>, T: Tick, A> At250x0Drv<Al, T, A> {
     {
         assert!(origin + buf.len() as u16 <= capacity(self.kind));
 
-        let t_cs = min_tcs::<T>(self.kind);
+        let t_cs = min_tcs_ns(self.kind);
 
         // TimeSpan<T> write.
         chip.select();
@@ -85,7 +85,7 @@ impl<Al: Alarm<T>, T: Tick, A> At250x0Drv<Al, T, A> {
         chip.deselect();
 
         // Wait until we can send a new spi command.
-        self.alarm.sleep(t_cs).await;
+        self.alarm.burn_nanos(t_cs);
 
         // See if write was enabled (it may have been disabled by the WP pin).
         let sr = self.read_status_register(spi, chip).await;
@@ -101,7 +101,7 @@ impl<Al: Alarm<T>, T: Tick, A> At250x0Drv<Al, T, A> {
                 }
 
                 // Wait until we can send a new spi command.
-                self.alarm.sleep(t_cs).await;
+                self.alarm.burn_nanos(t_cs);
 
                 self.write_page(spi, chip, address as u16, slice)
                     .await;
@@ -183,13 +183,13 @@ const fn capacity(kind: At250x0Kind) -> u16 {
 }
 
 /// Get the minimum t_cs time in ns, i.e. the minimum time the CS pin must be de-asserted betweeen commands.
-const fn min_tcs<T: Tick>(kind: At250x0Kind) -> TimeSpan<T> {
+const fn min_tcs_ns(kind: At250x0Kind) -> u32 {
         match kind {
-        At250x0Kind::At25010 => TimeSpan::from_nanos(250),
-        At250x0Kind::At25020 => TimeSpan::from_nanos(250),
-        At250x0Kind::At25040 => TimeSpan::from_nanos(250),
-        At250x0Kind::At25010b => TimeSpan::from_nanos(100),
-        At250x0Kind::At25020b => TimeSpan::from_nanos(100),
-        At250x0Kind::At25040b => TimeSpan::from_nanos(100),
+        At250x0Kind::At25010 => 250,
+        At250x0Kind::At25020 => 250,
+        At250x0Kind::At25040 => 250,
+        At250x0Kind::At25010b => 100,
+        At250x0Kind::At25020b => 100,
+        At250x0Kind::At25040b => 100,
     }
 }

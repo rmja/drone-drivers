@@ -14,4 +14,5 @@ pub const SYSTICKCLK: SysTickClk = HCLK.to_systickclk();
 pub struct SysTickTick;
 impl Tick for SysTickTick {
     const FREQ: u32 = SYSTICKCLK.f();
+    const CPU_FREQ: u32 = SYSCLK.f();
 }

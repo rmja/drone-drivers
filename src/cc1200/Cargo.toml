@@ -1,0 +1,33 @@
+cargo-features = ["resolver"]
+
+[package]
+name = "drone-cc1200-drv"
+version = "0.1.0"
+authors = ["Rasmus Melchior Jacobsen <rmja@laesoe.org>"]
+edition = "2018"
+resolver = "2"
+repository = "https://github.com/rmja/drone-drivers"
+readme = "README.md"
+license = "MIT OR Apache-2.0"
+description = """
+CC1200 low power and high performance wireless transceiver Drone OS driver.
+"""
+
+[badges]
+maintenance = { status = "actively-developed" }
+
+[features]
+default = []
+std = [
+    "drone-core/std",
+    "drone-cortexm/std",
+]
+
+[dependencies]
+drone-core = { version = "0.14.0", path = "../../../drone-core" }
+drone-time = { version = "0.1.0", path = "../../../drone-time" }
+async-trait = "0.1"
+futures = { version = "0.3.0", default-features = false }
+
+[dev-dependencies]
+drone-cortexm = { version = "0.14.0", path = "../../../drone-cortexm" }

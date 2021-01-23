@@ -79,7 +79,7 @@ impl<Port: Cc1200Port, Al: Alarm<T>, T: Tick, A> Cc1200Drv<Port, Al, T, A> {
         &self,
         spi: &mut Spi,
         chip: &mut Chip,
-        config: &Cc1200Config
+        config: &Cc1200Config<'_>
     ) {
         if !config.values.is_empty() {
             let len = config.values.len();

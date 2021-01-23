@@ -1,13 +1,12 @@
 //! The root task.
 
-use crate::{Regs, adapters::Tim2Tick, consts, thr, thr::ThrsInit};
+use crate::{adapters::Tim2Tick, consts, thr, thr::ThrsInit, Regs};
+use alloc::sync::Arc;
 use drone_cc1200_drv::Cc1200Drv;
 use drone_core::log;
-use alloc::sync::Arc;
 use drone_cortexm::{
     drv::sys_tick::SysTick, periph_sys_tick, reg::prelude::*, swo, thr::prelude::*,
 };
-use drone_time::AlarmDrv;
 use drone_stm32_map::periph::{
     dma::{periph_dma2, periph_dma2_ch2, periph_dma2_ch3},
     exti::periph_exti6,
@@ -16,11 +15,19 @@ use drone_stm32_map::periph::{
         periph_gpio_b8, periph_gpio_b_head, periph_gpio_d12, periph_gpio_d_head, periph_gpio_i1,
         periph_gpio_i_head,
     },
-    tim::{periph_tim2, periph_tim4},
     spi::periph_spi1,
+    tim::{periph_tim2, periph_tim4},
 };
-use drone_stm32f4_hal::{dma::{config::*, DmaCfg}, exti::{periph_syscfg, prelude::*, ExtiDrv, Syscfg}, gpio::{prelude::*, GpioHead}, rcc::{periph_flash, periph_pwr, periph_rcc, traits::*, Flash, Pwr, Rcc, RccSetup}, spi::{chipctrl::*, config::*, prelude::*, SpiDrv}, tim::{GeneralTimCfg, GeneralTimSetup, prelude::*}};
+use drone_stm32f4_hal::{
+    dma::{config::*, DmaCfg},
+    exti::{periph_syscfg, prelude::*, ExtiDrv, Syscfg},
+    gpio::{prelude::*, GpioHead},
+    rcc::{periph_flash, periph_pwr, periph_rcc, traits::*, Flash, Pwr, Rcc, RccSetup},
+    spi::{chipctrl::*, config::*, prelude::*, SpiDrv},
+    tim::{prelude::*, GeneralTimCfg, GeneralTimSetup},
+};
 use drone_time::Alarm;
+use drone_time::AlarmDrv;
 
 /// The root task handler.
 #[inline(never)]
@@ -118,10 +125,12 @@ pub fn handler(reg: Regs, thr_init: ThrsInit) {
     let mut chip = SpiChip::as_deselected(cs_pin);
 
     // Deselect other SPI devices on same bus
-    SpiChip::as_deselected(gpio_i
-        .pin(periph_gpio_i1!(reg))
-        .into_output()
-        .into_pushpull());
+    SpiChip::as_deselected(
+        gpio_i
+            .pin(periph_gpio_i1!(reg))
+            .into_output()
+            .into_pushpull(),
+    );
 
     // Initialize CC1200 gpio pins
     let dr_pin = gpio_d
@@ -134,7 +143,7 @@ pub fn handler(reg: Regs, thr_init: ThrsInit) {
         .into_output()
         .into_pushpull()
         .into_pullup();
-        
+
     // Initialize timer.
     let tim2 = GeneralTimCfg::with_enabled_clock(GeneralTimSetup::new(
         periph_tim2!(reg),
@@ -142,9 +151,9 @@ pub fn handler(reg: Regs, thr_init: ThrsInit) {
         pclk1,
         TimFreq::Nominal(consts::TIM2_FREQ),
     ))
-        .into_count_up()
-        .ch1(|ch| ch.into_output_compare())
-        .into_master();
+    .into_count_up()
+    .ch1(|ch| ch.into_output_compare())
+    .into_master();
 
     let mut tim4 = GeneralTimCfg::with_enabled_clock(GeneralTimSetup::new(
         periph_tim4!(reg),
@@ -152,9 +161,9 @@ pub fn handler(reg: Regs, thr_init: ThrsInit) {
         pclk1,
         TimFreq::Nominal(consts::TIM2_FREQ),
     ))
-        .into_count_up()
-        .ch1(|ch| ch.into_input_capture_pin(dr_pin))
-        .into_trigger_slave_of(tim2.link);
+    .into_count_up()
+    .ch1(|ch| ch.into_input_capture_pin(dr_pin))
+    .into_trigger_slave_of(tim2.link);
 
     let alarm = Arc::new(AlarmDrv::new(tim2.counter, tim2.ch1, Tim2Tick));
 
@@ -165,10 +174,7 @@ pub fn handler(reg: Regs, thr_init: ThrsInit) {
     };
     let mut cc1200 = Cc1200Drv::init(cc1200_port, alarm);
 
-    cc1200
-        .hw_reset(&mut chip)
-        .root_wait()
-        .unwrap_or_default();
+    cc1200.hw_reset(&mut chip).root_wait().unwrap_or_default();
 
     let pn = cc1200.read_part_number(&mut spi, &mut chip).root_wait();
 

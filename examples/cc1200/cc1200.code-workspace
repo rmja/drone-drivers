@@ -1,0 +1,21 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+		{
+			"path": "../.."
+		},
+		{
+			"path": "../../../drone-stm32f4-hal"
+		},
+		{
+			"path": "../../../drone-stm32-map"
+		},
+		{
+			"path": "../../../drone-time"
+		}
+	],
+	"remoteAuthority": "wsl+Ubuntu-20.04",
+	"settings": {}
+}

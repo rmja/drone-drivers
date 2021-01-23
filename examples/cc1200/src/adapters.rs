@@ -8,23 +8,16 @@ impl Tick for Tim2Tick {
 
 pub(crate) mod cc1200 {
     use async_trait::async_trait;
-    use drone_cc1200_drv::{Cc1200Chip, Cc1200Port, Cc1200Spi};
+    use drone_cc1200_drv::Cc1200Port;
     use drone_cortexm::thr::prelude::*;
     use drone_stm32_map::periph::{
-        dma::ch::DmaChMap,
         exti::{ExtiFtsrFt, ExtiMap, ExtiPrPif, ExtiRtsrRt, ExtiSwierSwi, SyscfgExticrExti},
         gpio::pin::GpioPinMap,
-        spi::SpiMap,
-        tim::general::GeneralTimMap,
     };
     use drone_stm32f4_hal::{
         exti::{prelude::*, ExtiLine},
         gpio::{prelude::*, GpioPin},
-        spi::{chipctrl::SpiChip, config::MisoPinExt, SpiMasterDrv},
-        tim::{GeneralTimChDrv, OutputCompareMode},
     };
-    use drone_time::Alarm;
-    use futures::prelude::*;
 
     pub struct Adapters;
 
@@ -78,23 +71,4 @@ pub(crate) mod cc1200 {
     //         self.sleep(duration).await;
     //     }
     // }
-
-    impl<Pin: GpioPinMap, PinType, PinPull> Cc1200Chip<Adapters> for SpiChip<Pin, PinType, PinPull> {
-        fn select(&mut self) {
-            self.select();
-        }
-
-        fn deselect(&mut self) {
-            self.deselect();
-        }
-    }
-
-    #[async_trait]
-    impl<Spi: SpiMap, DmaRx: DmaChMap, DmaRxInt: IntToken, DmaTx: DmaChMap, DmaTxInt: IntToken>
-        Cc1200Spi<Adapters> for SpiMasterDrv<'_, Spi, DmaRx, DmaRxInt, DmaTx, DmaTxInt>
-    {
-        async fn xfer(&mut self, tx: &[u8], rx: &mut [u8]) {
-            self.xfer(tx, rx).await;
-        }
-    }
 }

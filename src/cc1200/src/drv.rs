@@ -1,41 +1,15 @@
-use crate::{
-    opcode::{ExtReg, Opcode, Reg, Strobe},
-    Cc1200Chip, Cc1200Port, Cc1200Spi,
-};
+use crate::{Cc1200Chip, Cc1200Config, Cc1200Port, Cc1200Spi, StatusByte, opcode::{ExtReg, Opcode, Reg, Strobe}};
 use alloc::sync::Arc;
 use core::cell::Cell;
 use core::marker::PhantomData;
-use drone_core::bitfield::Bitfield;
 use drone_time::{Alarm, Tick, TimeSpan};
 use futures::future::{self, Either};
-
-#[derive(Clone, Copy, Bitfield)]
-#[bitfield(
-    reserved(r, 0, 4),
-    state(r, 4, 3, "Indicates the current main state machine mode."),
-    chip_rdy(r, 7, 1, "Stays high until power and crystal have stabilized. Should always be low when using the SPI interface."),
-)]
-struct StatusRegister(u8);
-
-#[allow(dead_code)]
-#[allow(non_camel_case_types)]
-#[repr(u8)]
-enum Cc1200State {
-    IDLE = 0b000,
-    RX = 0b001,
-    TX = 0b010,
-    FSTXON = 0b011,
-    CALIBRATE = 0b100,
-    SETTLING = 0b101,
-    RX_FIFO_ERROR = 0b110,
-    TX_FIFO_ERROR = 0b111,
-}
 
 pub struct Cc1200Drv<Port: Cc1200Port, Al: Alarm<T>, T: Tick, A> {
     port: Port,
     alarm: Arc<Al>,
     adapters: PhantomData<A>,
-    status: Cell<StatusRegister>,
+    status: Cell<StatusByte>,
     rssi_offset: Rssi,
     tick: PhantomData<T>,
 }
@@ -55,7 +29,7 @@ impl<Port: Cc1200Port, Al: Alarm<T>, T: Tick, A> Cc1200Drv<Port, Al, T, A> {
             port,
             alarm,
             adapters: PhantomData,
-            status: Cell::new(StatusRegister(0)),
+            status: Cell::new(StatusByte(0)),
             rssi_offset: Rssi(0),
             tick: PhantomData,
         }
@@ -95,16 +69,51 @@ impl<Port: Cc1200Port, Al: Alarm<T>, T: Tick, A> Cc1200Drv<Port, Al, T, A> {
         chip.select();
         spi.xfer(&CMD, &mut rx_buf).await;
         chip.deselect();
-        self.status.set(StatusRegister(rx_buf[0]));
+        self.status.set(StatusByte(rx_buf[0]));
 
         rx_buf[2]
     }
 
-    /// Write values to the config register section.
-    pub fn write_config() {}
+    /// Write configuration values.
+    pub async fn write_config<Spi: Cc1200Spi<A>, Chip: Cc1200Chip<A>>(
+        &self,
+        spi: &mut Spi,
+        chip: &mut Chip,
+        config: &Cc1200Config
+    ) {
+        if !config.values.is_empty() {
+            let len = config.values.len();
+            let opcode = if len == 1 {
+                Opcode::WriteSingle(config.first)
+            } else {
+                Opcode::WriteBurst(config.first)
+            };
+            let mut tx = Vec::with_capacity(1 + len);
+            tx.push(opcode.val());
+            tx.extend_from_slice(config.values);
 
-    /// Write values to the extended config register section.
-    pub fn write_ext_config() {}
+            chip.select();
+            spi.write(&tx).await;
+            chip.deselect();
+        }
+
+        if !config.ext_values.is_empty() {
+            let len = config.ext_values.len();
+            let opcode = if len == 1 {
+                Opcode::WriteSingle(Reg::EXTENDED_ADDRESS)
+            } else {
+                Opcode::WriteBurst(Reg::EXTENDED_ADDRESS)
+            };
+            let mut tx = Vec::with_capacity(2 + len);
+            tx.push(opcode.val());
+            tx.push(config.ext_first as u8);
+            tx.extend_from_slice(config.ext_values);
+
+            chip.select();
+            spi.write(&tx).await;
+            chip.deselect();
+        }
+    }
 
     pub async fn read_rssi<Spi: Cc1200Spi<A>, Chip: Cc1200Chip<A>>(
         &self,
@@ -121,7 +130,7 @@ impl<Port: Cc1200Port, Al: Alarm<T>, T: Tick, A> Cc1200Drv<Port, Al, T, A> {
 
         chip.select();
         spi.xfer(&CMD, &mut rx_buf).await;
-        self.status.set(StatusRegister(rx_buf[0]));
+        self.status.set(StatusByte(rx_buf[0]));
         chip.deselect();
 
         Rssi(rx_buf[2] as i8 + self.rssi_offset.0)
@@ -151,7 +160,7 @@ impl<Port: Cc1200Port, Al: Alarm<T>, T: Tick, A> Cc1200Drv<Port, Al, T, A> {
 
         chip.select();
         spi.xfer(&CMD, &mut rx_buf).await;
-        self.status.set(StatusRegister(rx_buf[0]));
+        self.status.set(StatusByte(rx_buf[0]));
         chip.deselect();
 
         let len = buf.len();
@@ -184,7 +193,7 @@ impl<Port: Cc1200Port, Al: Alarm<T>, T: Tick, A> Cc1200Drv<Port, Al, T, A> {
 
         chip.select();
         spi.xfer(&CMD, &mut rx_buf).await;
-        self.status.set(StatusRegister(rx_buf[0]));
+        self.status.set(StatusByte(rx_buf[0]));
         chip.deselect();
 
         let len = buf.len();
@@ -204,7 +213,7 @@ impl<Port: Cc1200Port, Al: Alarm<T>, T: Tick, A> Cc1200Drv<Port, Al, T, A> {
         }
     }
 
-    async fn strobe<Spi: Cc1200Spi<A>, Chip: Cc1200Chip<A>>(
+    pub async fn strobe<Spi: Cc1200Spi<A>, Chip: Cc1200Chip<A>>(
         &mut self,
         spi: &mut Spi,
         chip: &mut Chip,
@@ -215,7 +224,7 @@ impl<Port: Cc1200Port, Al: Alarm<T>, T: Tick, A> Cc1200Drv<Port, Al, T, A> {
 
         chip.select();
         spi.xfer(&tx_buf, &mut rx_buf).await;
-        self.status.set(StatusRegister(rx_buf[0]));
+        self.status.set(StatusByte(rx_buf[0]));
 
         if strobe == Strobe::SRES {
             // When SRES strobe is issued the CSn pin must be kept low until the SO pin goes low again.
@@ -225,14 +234,14 @@ impl<Port: Cc1200Port, Al: Alarm<T>, T: Tick, A> Cc1200Drv<Port, Al, T, A> {
         chip.deselect();
     }
 
-    async fn strobe_until<Spi: Cc1200Spi<A>, Chip: Cc1200Chip<A>, Pred>(
+    pub async fn strobe_until<Spi: Cc1200Spi<A>, Chip: Cc1200Chip<A>, Pred>(
         &mut self,
         spi: &mut Spi,
         chip: &mut Chip,
         strobe: Strobe,
         pred: Pred,
     ) where
-        Pred: Fn(StatusRegister) -> bool,
+        Pred: Fn(StatusByte) -> bool,
     {
         let tx_buf: [u8; 1] = [strobe as u8];
         let mut rx_buf = [0u8];
@@ -241,7 +250,7 @@ impl<Port: Cc1200Port, Al: Alarm<T>, T: Tick, A> Cc1200Drv<Port, Al, T, A> {
         chip.select();
         loop {
             spi.xfer(&tx_buf, &mut rx_buf).await;
-            self.status.set(StatusRegister(rx_buf[0]));
+            self.status.set(StatusByte(rx_buf[0]));
 
             if pred(self.status.get()) {
                 break;

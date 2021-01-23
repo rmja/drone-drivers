@@ -31,7 +31,7 @@ drone-cortexm = { version = "0.14.0", features = ["bit-band", "floating-point-un
 drone-stm32-map = { version = "0.14.0", features = ["dma", "exti", "gpio", "spi", "tim"], path="../../../drone-stm32-map" }
 drone-time = { version = "0.1.0", features = ["stm32f4"], path="../../../drone-time" }
 drone-stm32f4-hal = { version = "0.1.0", features = ["dma", "exti", "gpio", "rcc", "spi", "tim"], path="../../../drone-stm32f4-hal" }
-drone-cc1200-drv = { version = "0.1.0", path="../../src/cc1200" }
+drone-cc1200-drv = { version = "0.1.0", features = ["stm32f4"], path="../../src/cc1200" }
 async-trait = "0.1"
 futures = { version = "0.3.0", default-features = false }
 

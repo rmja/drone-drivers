@@ -1,12 +1,12 @@
 use crate::{
-    opcode::{Opcode, Strobe, ExtReg, Reg},
+    opcode::{ExtReg, Opcode, Reg, Strobe},
     Cc1200Chip, Cc1200Port, Cc1200Spi,
 };
 use alloc::sync::Arc;
 use core::cell::Cell;
 use core::marker::PhantomData;
 use drone_core::bitfield::Bitfield;
-use drone_time::{Tick, Alarm, TimeSpan};
+use drone_time::{Alarm, Tick, TimeSpan};
 use futures::future::{self, Either};
 
 #[derive(Clone, Copy, Bitfield)]
@@ -431,9 +431,7 @@ impl<Port: Cc1200Port, Al: Alarm<T>, T: Tick, A> Cc1200Drv<Port, Al, T, A> {
     }
 
     /// Wait for the xtal to stabilize.
-    async fn wait_for_xtal(
-        &mut self,
-    ) -> Result<(), TimeoutError> {
+    async fn wait_for_xtal(&mut self) -> Result<(), TimeoutError> {
         let rising = self.port.miso_wait_low();
         let timeout = self.alarm.sleep(TimeSpan::from_secs(2));
 

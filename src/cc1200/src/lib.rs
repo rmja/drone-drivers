@@ -9,11 +9,7 @@ mod drv;
 mod opcode;
 
 pub use self::{
-    adapters::{
-        chip::Cc1200Chip,
-        port::Cc1200Port,
-        spi::Cc1200Spi,
-    },
+    adapters::{chip::Cc1200Chip, port::Cc1200Port, spi::Cc1200Spi},
     drv::Cc1200Drv,
 };
 

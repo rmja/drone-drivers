@@ -1,6 +1,6 @@
 use crate::{Cc1200Chip, Cc1200Config, Cc1200Port, Cc1200Spi, StatusByte, opcode::{ExtReg, Opcode, Reg, Strobe}};
 use alloc::sync::Arc;
-use core::{cell::Cell, mem::replace};
+use core::cell::Cell;
 use core::marker::PhantomData;
 use drone_time::{Alarm, Tick, TimeSpan};
 use futures::future::{self, Either};
@@ -181,6 +181,36 @@ impl<Port: Cc1200Port, Al: Alarm<T>, T: Tick, A> Cc1200Drv<Port, Al, T, A> {
         chip.select();
         spi.write(&tx).await;
         chip.deselect();
+    }
+
+    /// Modify register values.
+    pub async fn modify_regs<Spi: Cc1200Spi<A>, Chip: Cc1200Chip<A>, F: FnOnce(&mut [u8])>(
+        &self,
+        spi: &mut Spi,
+        chip: &mut Chip,
+        first: Reg,
+        count: usize,
+        configure: F,
+    ) {
+        let mut buf = vec![0; count];
+        self.read_regs(spi, chip, first, &mut buf).await;
+        configure(&mut buf);
+        self.write_regs(spi, chip, first, &buf).await;
+    }
+
+    /// Modify extended register values.
+    pub async fn modify_ext_regs<Spi: Cc1200Spi<A>, Chip: Cc1200Chip<A>, F: FnOnce(&mut [u8])>(
+        &self,
+        spi: &mut Spi,
+        chip: &mut Chip,
+        first: ExtReg,
+        count: usize,
+        configure: F,
+    ) {
+        let mut buf = vec![0; count];
+        self.read_ext_regs(spi, chip, first, &mut buf).await;
+        configure(&mut buf);
+        self.write_ext_regs(spi, chip, first, &buf).await;
     }
 
     pub async fn read_rssi<Spi: Cc1200Spi<A>, Chip: Cc1200Chip<A>>(

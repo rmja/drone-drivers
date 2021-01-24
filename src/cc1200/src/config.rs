@@ -6,3 +6,10 @@ pub struct Cc1200Config<'a> {
     pub ext_first: ExtReg,
     pub ext_values: &'a [u8],
 }
+
+pub enum Cc1200Gpio {
+    Gpio0,
+    Gpio1,
+    Gpio2,
+    Gpio3,
+}

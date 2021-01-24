@@ -3,7 +3,7 @@ use drone_core::sync::Mutex;
 use drone_time::{Alarm, Tick};
 use futures::Future;
 
-use crate::{Cc1200Chip, Cc1200Drv, Cc1200Port, Cc1200Spi, State, TimeoutError, opcode::{ExtReg, Opcode, Reg, Strobe}};
+use crate::{Cc1200Chip, Cc1200Config, Cc1200Drv, Cc1200Port, Cc1200Spi, State, TimeoutError, config::Cc1200Gpio, opcode::{ExtReg, Opcode, Reg, Strobe}, regs::{Mdmcfg0, Mdmcfg1, Mdmcfg2, PktCfg2}};
 
 pub struct DebugController<
     Port: Cc1200Port,
@@ -13,14 +13,16 @@ pub struct DebugController<
     driver: Cc1200Drv<Port, Al, T, A>,
     spi: Arc<Mutex<Spi>>,
     chip: Chip,
+    config: &'static Cc1200Config<'static>,
 }
 
 impl<Port: Cc1200Port, Spi: Cc1200Spi<A>, Chip: Cc1200Chip<A>, Al: Alarm<T>, T: Tick, A> DebugController<Port, Spi, Chip, Al, T, A> {
-    async fn setup(port: Port, alarm: Arc<Al>, spi: Arc<Mutex<Spi>>, chip: Chip) -> Result<Self, TimeoutError> {
+    async fn setup(port: Port, alarm: Arc<Al>, spi: Arc<Mutex<Spi>>, chip: Chip, config: &'static Cc1200Config<'static>) -> Result<Self, TimeoutError> {
         let mut ctrl = Self {
             driver: Cc1200Drv::init(port, alarm),
             spi,
             chip,
+            config,
         };
 
         ctrl.driver.hw_reset(&mut ctrl.chip).await?;
@@ -34,43 +36,102 @@ impl<Port: Cc1200Port, Spi: Cc1200Spi<A>, Chip: Cc1200Chip<A>, Al: Alarm<T>, T: 
     }
 
     pub async fn tx_unmodulated(&mut self) {
+        let mut spi = self.spi.try_lock().unwrap();
+
+        self.driver.write_config(&mut *spi, &mut self.chip, self.config).await;
+        
+        self.driver.modify_ext_regs(&mut *spi, &mut self.chip, ExtReg::MDMCFG2, 1, |v| {
+            v[0] = Mdmcfg2(v[0]).set_cfm_data_en().0; // Enable custom frequency modulation
+        }).await;
+
+        self.driver.modify_regs(&mut *spi, &mut self.chip, Reg::MDMCFG1, 2, |v| {
+            v[0] = Mdmcfg1(v[0]).clear_fifo_en().0; // Disable FIFO (required by synchronous serial mode)
+            v[1] = Mdmcfg0(v[1]).clear_transparent_mode_en().0; // Disable Transparent mode (required by synchronous serial mode)
+        }).await;
+
+        self.driver.modify_regs(&mut *spi, &mut self.chip, Reg::PKT_CFG2, 1, |v| {
+            v[0] = PktCfg2(v[0]).write_pkt_format(0b01).0; // Synchronous serial mode
+        }).await;
+
+        // Start transmitter
+        self.driver.strobe(&mut *spi, &mut self.chip, Strobe::STX).await;
+    }
+
+    pub async fn tx_modulated_01(&mut self) {
+        let mut spi = self.spi.try_lock().unwrap();
+
+        self.driver.write_config(&mut *spi, &mut self.chip, self.config).await;
+        
+        self.driver.modify_regs(&mut *spi, &mut self.chip, Reg::MDMCFG1, 2, |v| {
+            v[0] = Mdmcfg1(v[0]).clear_fifo_en().0; // Disable FIFO (required by synchronous serial mode)
+            v[1] = Mdmcfg0(v[1]).clear_transparent_mode_en().0; // Disable Transparent mode (required by synchronous serial mode)
+        }).await;
+
+        self.driver.modify_regs(&mut *spi, &mut self.chip, Reg::PKT_CFG2, 1, |v| {
+            v[0] = PktCfg2(v[0]).write_pkt_format(0b01).0; // Synchronous serial mode
+        }).await;
+
+        // Set TXLAST != TXFIRST
+        self.driver.write_ext_regs(&mut *spi, &mut self.chip, ExtReg::TXFIRST, &[0]).await;
+        self.driver.write_ext_regs(&mut *spi, &mut self.chip, ExtReg::TXLAST, &[1]).await;
+
+        // Start transmitter
+        self.driver.strobe(&mut *spi, &mut self.chip, Strobe::STX).await;
+    }
+
+    pub async fn tx_modulated_pn9(&mut self) {
+        let mut spi = self.spi.try_lock().unwrap();
+
+        self.driver.write_config(&mut *spi, &mut self.chip, self.config).await;
+
+        self.driver.modify_regs(&mut *spi, &mut self.chip, Reg::PKT_CFG2, 1, |v| {
+            v[0] = PktCfg2(v[0]).write_pkt_format(0b10).0; // Random mode
+        }).await;
+        
+        // Set TXLAST != TXFIRST (Required by random mode).
+        self.driver.write_ext_regs(&mut *spi, &mut self.chip, ExtReg::TXFIRST, &[0]).await;
+        self.driver.write_ext_regs(&mut *spi, &mut self.chip, ExtReg::TXLAST, &[1]).await;
+
+        // Start transmitter.
+        self.driver.strobe(&mut *spi, &mut self.chip, Strobe::STX).await;
+    }
+
+    pub async fn rx(&mut self, data: Option<Cc1200Gpio>, clk: Option<Cc1200Gpio>) {
         // Enable custom frequency modulation
         let mut spi = self.spi.try_lock().unwrap();
-        
-        let mut mdmcfg2 = [0];
-        self.driver.read_ext_regs(&mut *spi, &mut self.chip, ExtReg::MDMCFG2, &mut mdmcfg2).await;
 
-        let mut mdmcfg1 = [0,0];
-        self.driver.read_regs(&mut *spi, &mut self.chip, Reg::MDMCFG1, &mut mdmcfg1).await;
+        self.driver.write_config(&mut *spi, &mut self.chip, self.config).await;
 
-        let mut pkt_cfg2 = [0];
-        self.driver.read_regs(&mut *spi, &mut self.chip, Reg::PKT_CFG2, &mut pkt_cfg2).await;
+        self.driver.modify_regs(&mut *spi, &mut self.chip, Reg::MDMCFG1, 2, |v| {
+            v[0] = Mdmcfg1(v[0]).clear_fifo_en().0; // Disable FIFO (required by synchronous serial mode)
+            v[1] = Mdmcfg0(v[1]).clear_transparent_mode_en().0; // Disable Transparent mode (required by synchronous serial mode)
+        }).await;
 
-        let mdmcfg2 = 123u8;
-        let mdmcfg1 = 123u8;
-        let mdmcfg0 = 123u8;
-        let pkt_cfg2 = 123u8;
+        self.driver.modify_regs(&mut *spi, &mut self.chip, Reg::PKT_CFG2, 1, |v| {
+            v[0] = PktCfg2(v[0]).write_pkt_format(0b01).0; // Synchronous serial mode
+        }).await;
 
-        let batch = [
-            Opcode::WriteSingle(Reg::EXTENDED_ADDRESS).val(),
-            ExtReg::MDMCFG2 as u8,
-            mdmcfg2,
+        if let Some(data) = data {
+            let iocfg = match data {
+                Cc1200Gpio::Gpio0 => Reg::IOCFG0,
+                Cc1200Gpio::Gpio1 => Reg::IOCFG1,
+                Cc1200Gpio::Gpio2 => Reg::IOCFG2,
+                Cc1200Gpio::Gpio3 => Reg::IOCFG3,
+            };
+            self.driver.write_regs(&mut *spi, &mut self.chip, iocfg, &[0x09]).await;
+        }
 
-            Opcode::WriteSingle(Reg::MDMCFG1).val(),
-            mdmcfg1,
+        if let Some(clk) = clk {
+            let iocfg = match clk {
+                Cc1200Gpio::Gpio0 => Reg::IOCFG0,
+                Cc1200Gpio::Gpio1 => Reg::IOCFG1,
+                Cc1200Gpio::Gpio2 => Reg::IOCFG2,
+                Cc1200Gpio::Gpio3 => Reg::IOCFG3,
+            };
+            self.driver.write_regs(&mut *spi, &mut self.chip, iocfg, &[0x08]).await;
+        }
 
-            Opcode::WriteSingle(Reg::MDMCFG0).val(),
-            mdmcfg0,
-
-            Opcode::WriteSingle(Reg::PKT_CFG2).val(),
-            pkt_cfg2,
-
-            Opcode::Strobe(Strobe::STX).val(),
-        ];
-
-        let mut spi = self.spi.try_lock().unwrap();
-        // spi.write()
-
-        // Calibration starts when entering TX.
+        // Start receiver.
+        self.driver.strobe(&mut *spi, &mut self.chip, Strobe::SRX).await;
     }
 }

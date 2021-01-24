@@ -12,6 +12,7 @@ mod opcode;
 mod statusbyte;
 mod config;
 mod configs;
+mod regs;
 
 pub use self::{
     adapters::{chip::Cc1200Chip, port::Cc1200Port, spi::Cc1200Spi},

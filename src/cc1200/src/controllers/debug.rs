@@ -28,13 +28,23 @@ impl<Port: Cc1200Port, Spi: Cc1200Spi<A>, Chip: Cc1200Chip<A>, Al: Alarm<T>, T: 
         Ok(ctrl)
     }
 
-    async fn idle(&mut self) {
+    pub async fn idle(&mut self) {
         let mut spi = self.spi.try_lock().unwrap();
         self.driver.strobe_until(&mut *spi, &mut self.chip, Strobe::SIDLE, |status| status.state() == State::IDLE).await;
     }
 
-    pub fn tx_unmodulated(&mut self) {
+    pub async fn tx_unmodulated(&mut self) {
         // Enable custom frequency modulation
+        let mut spi = self.spi.try_lock().unwrap();
+        
+        let mut mdmcfg2 = [0];
+        self.driver.read_ext_regs(&mut *spi, &mut self.chip, ExtReg::MDMCFG2, &mut mdmcfg2).await;
+
+        let mut mdmcfg1 = [0,0];
+        self.driver.read_regs(&mut *spi, &mut self.chip, Reg::MDMCFG1, &mut mdmcfg1).await;
+
+        let mut pkt_cfg2 = [0];
+        self.driver.read_regs(&mut *spi, &mut self.chip, Reg::PKT_CFG2, &mut pkt_cfg2).await;
 
         let mdmcfg2 = 123u8;
         let mdmcfg1 = 123u8;

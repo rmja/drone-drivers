@@ -5,13 +5,13 @@
 extern crate alloc;
 
 mod adapters;
-mod controllers;
+pub mod controllers;
 mod drv;
 mod drivers;
 mod opcode;
 mod statusbyte;
 mod config;
-mod configs;
+pub mod configs;
 mod regs;
 
 pub use self::{

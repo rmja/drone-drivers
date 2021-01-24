@@ -17,9 +17,9 @@ pub struct DebugController<
 }
 
 impl<Port: Cc1200Port, Spi: Cc1200Spi<A>, Chip: Cc1200Chip<A>, Al: Alarm<T>, T: Tick, A> DebugController<Port, Spi, Chip, Al, T, A> {
-    async fn setup(port: Port, alarm: Arc<Al>, spi: Arc<Mutex<Spi>>, chip: Chip, config: &'static Cc1200Config<'static>) -> Result<Self, TimeoutError> {
+    pub async fn setup(driver: Cc1200Drv<Port, Al, T, A>, spi: Arc<Mutex<Spi>>, chip: Chip, config: &'static Cc1200Config<'static>) -> Result<Self, TimeoutError> {
         let mut ctrl = Self {
-            driver: Cc1200Drv::init(port, alarm),
+            driver,
             spi,
             chip,
             config,
@@ -38,6 +38,7 @@ impl<Port: Cc1200Port, Spi: Cc1200Spi<A>, Chip: Cc1200Chip<A>, Al: Alarm<T>, T: 
     pub async fn tx_unmodulated(&mut self) {
         let mut spi = self.spi.try_lock().unwrap();
 
+        // Write default configuration.
         self.driver.write_config(&mut *spi, &mut self.chip, self.config).await;
         
         self.driver.modify_ext_regs(&mut *spi, &mut self.chip, ExtReg::MDMCFG2, 1, |v| {
@@ -60,6 +61,7 @@ impl<Port: Cc1200Port, Spi: Cc1200Spi<A>, Chip: Cc1200Chip<A>, Al: Alarm<T>, T: 
     pub async fn tx_modulated_01(&mut self) {
         let mut spi = self.spi.try_lock().unwrap();
 
+        // Write default configuration.
         self.driver.write_config(&mut *spi, &mut self.chip, self.config).await;
         
         self.driver.modify_regs(&mut *spi, &mut self.chip, Reg::MDMCFG1, 2, |v| {
@@ -82,6 +84,7 @@ impl<Port: Cc1200Port, Spi: Cc1200Spi<A>, Chip: Cc1200Chip<A>, Al: Alarm<T>, T: 
     pub async fn tx_modulated_pn9(&mut self) {
         let mut spi = self.spi.try_lock().unwrap();
 
+        // Write default configuration.
         self.driver.write_config(&mut *spi, &mut self.chip, self.config).await;
 
         self.driver.modify_regs(&mut *spi, &mut self.chip, Reg::PKT_CFG2, 1, |v| {
@@ -100,6 +103,7 @@ impl<Port: Cc1200Port, Spi: Cc1200Spi<A>, Chip: Cc1200Chip<A>, Al: Alarm<T>, T: 
         // Enable custom frequency modulation
         let mut spi = self.spi.try_lock().unwrap();
 
+        // Write default configuration.
         self.driver.write_config(&mut *spi, &mut self.chip, self.config).await;
 
         self.driver.modify_regs(&mut *spi, &mut self.chip, Reg::MDMCFG1, 2, |v| {

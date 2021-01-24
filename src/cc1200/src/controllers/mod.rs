@@ -1,2 +1,6 @@
-pub mod debug;
-pub mod infinite;
+mod debug;
+mod infinite;
+
+pub use self::{
+    debug::DebugController,
+};

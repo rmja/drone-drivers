@@ -2,8 +2,8 @@
 
 use crate::{adapters::Tim2Tick, consts, thr, thr::ThrsInit, Regs};
 use alloc::sync::Arc;
-use drone_cc1200_drv::Cc1200Drv;
-use drone_core::log;
+use drone_cc1200_drv::{Cc1200Drv, controllers::DebugController, configs::CC1200_WMBUS_MODECMTO_FULL};
+use drone_core::{log, sync::Mutex};
 use drone_cortexm::{
     drv::sys_tick::SysTick, periph_sys_tick, reg::prelude::*, swo, thr::prelude::*,
 };
@@ -26,7 +26,7 @@ use drone_stm32f4_hal::{
     spi::{chipctrl::*, config::*, prelude::*, SpiDrv},
     tim::{prelude::*, GeneralTimCfg, GeneralTimSetup},
 };
-use drone_time::Alarm;
+use drone_time::{Alarm, TimeSpan};
 use drone_time::AlarmDrv;
 
 /// The root task handler.
@@ -172,21 +172,19 @@ pub fn handler(reg: Regs, thr_init: ThrsInit) {
         reset_pin,
         miso_exti_line: exti6.line(miso_pin_reset),
     };
-    let mut cc1200 = Cc1200Drv::init(cc1200_port, alarm);
+    let mut cc1200 = Cc1200Drv::init(cc1200_port, alarm.clone());
 
     cc1200.hw_reset(&mut chip).root_wait().unwrap_or_default();
 
     let pn = cc1200.read_part_number(&mut spi, &mut chip).root_wait();
 
-    loop {
-        let selection = spi.select(&mut chip);
-        let tx_buf = [1, 2, 3, 4].as_ref();
-        let mut rx_buf = [0; 4];
-        spi.write(tx_buf).root_wait();
-        spi.read(&mut rx_buf).root_wait();
-        spi.xfer(tx_buf, &mut rx_buf).root_wait();
-        drop(selection); // drop() deselects chip.
-    }
+
+    let spi = Arc::new(Mutex::new(spi));
+    let mut debug = DebugController::setup(cc1200, spi, chip, &CC1200_WMBUS_MODECMTO_FULL).root_wait().unwrap();
+
+    debug.tx_unmodulated().root_wait();
+    alarm.sleep(TimeSpan::from_secs(10)).root_wait();
+    debug.idle().root_wait();
 
     // Enter a sleep state on ISR exit.
     reg.scb_scr.sleeponexit.set_bit();

@@ -1,3 +1,1 @@
-pub struct InfiniteController {
-    
-}
+pub struct InfiniteController {}

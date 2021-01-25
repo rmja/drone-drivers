@@ -5,20 +5,20 @@
 extern crate alloc;
 
 mod adapters;
-pub mod controllers;
-mod drv;
-mod drivers;
-mod opcode;
-mod statusbyte;
 mod config;
 pub mod configs;
+pub mod controllers;
+mod drivers;
+mod drv;
+mod opcode;
 mod regs;
+mod statusbyte;
 
 pub use self::{
     adapters::{chip::Cc1200Chip, port::Cc1200Port, spi::Cc1200Spi},
+    config::Cc1200Config,
     drv::{Cc1200Drv, TimeoutError},
-    statusbyte::{StatusByte, State},
-    config::Cc1200Config
+    statusbyte::{State, StatusByte},
 };
 
 #[prelude_import]

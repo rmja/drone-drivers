@@ -1,4 +1,7 @@
-use crate::{Cc1200Chip, Cc1200Config, Cc1200Port, Cc1200Spi, StatusByte, opcode::{ExtReg, Opcode, Reg, Strobe}};
+use crate::{
+    opcode::{ExtReg, Opcode, Reg, Strobe},
+    Cc1200Chip, Cc1200Config, Cc1200Port, Cc1200Spi, StatusByte,
+};
 use alloc::sync::Arc;
 use core::cell::Cell;
 use core::marker::PhantomData;
@@ -79,14 +82,16 @@ impl<Port: Cc1200Port, Al: Alarm<T>, T: Tick, A> Cc1200Drv<Port, Al, T, A> {
         &self,
         spi: &mut Spi,
         chip: &mut Chip,
-        config: &Cc1200Config<'_>
+        config: &Cc1200Config<'_>,
     ) {
         if !config.values.is_empty() {
-            self.write_regs(spi, chip, config.first, config.values).await;
+            self.write_regs(spi, chip, config.first, config.values)
+                .await;
         }
 
         if !config.ext_values.is_empty() {
-            self.write_ext_regs(spi, chip, config.ext_first, config.ext_values).await;
+            self.write_ext_regs(spi, chip, config.ext_first, config.ext_values)
+                .await;
         }
     }
 
@@ -95,7 +100,7 @@ impl<Port: Cc1200Port, Al: Alarm<T>, T: Tick, A> Cc1200Drv<Port, Al, T, A> {
         spi: &mut Spi,
         chip: &mut Chip,
         first: Reg,
-        buf: &mut [u8]
+        buf: &mut [u8],
     ) {
         let len = buf.len();
         let opcode = if len == 1 {
@@ -118,7 +123,7 @@ impl<Port: Cc1200Port, Al: Alarm<T>, T: Tick, A> Cc1200Drv<Port, Al, T, A> {
         spi: &mut Spi,
         chip: &mut Chip,
         first: ExtReg,
-        buf: &mut [u8]
+        buf: &mut [u8],
     ) {
         let len = buf.len();
         let opcode = if len == 1 {
@@ -142,7 +147,7 @@ impl<Port: Cc1200Port, Al: Alarm<T>, T: Tick, A> Cc1200Drv<Port, Al, T, A> {
         spi: &mut Spi,
         chip: &mut Chip,
         first: Reg,
-        values: &[u8]
+        values: &[u8],
     ) {
         let len = values.len();
         let opcode = if len == 1 {
@@ -165,7 +170,7 @@ impl<Port: Cc1200Port, Al: Alarm<T>, T: Tick, A> Cc1200Drv<Port, Al, T, A> {
         spi: &mut Spi,
         chip: &mut Chip,
         first: ExtReg,
-        values: &[u8]
+        values: &[u8],
     ) {
         let len = values.len();
         let opcode = if len == 1 {

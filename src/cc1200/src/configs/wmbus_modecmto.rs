@@ -1,4 +1,7 @@
-use crate::{Cc1200Config, opcode::{ExtReg, Reg}};
+use crate::{
+    opcode::{ExtReg, Reg},
+    Cc1200Config,
+};
 
 /// The CC1200 configuration is obtained using TI Smart RF Studio 7 v. 2.15.0
 ///
@@ -30,7 +33,7 @@ use crate::{Cc1200Config, opcode::{ExtReg, Reg}};
 ///     PKT_CFG0       0x40  Infinite packet length mode
 ///     RFEND_CFG1     0x3F  Re-enter RX when RX ends
 ///     TOC_CFG        0x0B  Best setting according to the details below
-/// 
+///
 /// According to https://e2e.ti.com/support/wireless_connectivity/low_power_rf_tools/f/155/p/310710/1082041
 /// For datarate tolerance up to 2000ppm: TOC_CFG=0x0B or 0x0A
 /// For datarate tolerance up to 2%: TOC_CFG=0x4B

@@ -5,7 +5,7 @@ use futures::Future;
 
 use crate::{
     config::Cc1200Gpio,
-    opcode::{ExtReg, Opcode, Reg, Strobe},
+    opcode::{ExtReg, Reg, Strobe},
     regs::{Mdmcfg0, Mdmcfg1, Mdmcfg2, PktCfg2},
     Cc1200Chip, Cc1200Config, Cc1200Drv, Cc1200Port, Cc1200Spi, State, TimeoutError,
 };
@@ -47,11 +47,7 @@ impl<Port: Cc1200Port, Spi: Cc1200Spi<A>, Chip: Cc1200Chip<A>, Al: Alarm<T>, T: 
 
     pub async fn idle(&mut self) {
         let mut spi = self.spi.try_lock().unwrap();
-        self.driver
-            .strobe_until(&mut *spi, &mut self.chip, Strobe::SIDLE, |status| {
-                status.state() == State::IDLE
-            })
-            .await;
+        self.driver.strobe_idle_until_idle(&mut *spi, &mut self.chip).await;
     }
 
     pub async fn tx_unmodulated(&mut self) {
@@ -80,6 +76,10 @@ impl<Port: Cc1200Port, Spi: Cc1200Spi<A>, Chip: Cc1200Chip<A>, Al: Alarm<T>, T: 
                 v[0] = PktCfg2(v[0]).write_pkt_format(0b01).0; // Synchronous serial mode
             })
             .await;
+
+        if self.driver.last_status().state() == State::TX {
+            self.driver.strobe_idle_until_idle(&mut *spi, &mut self.chip).await;
+        }
 
         // Start transmitter
         self.driver
@@ -116,6 +116,10 @@ impl<Port: Cc1200Port, Spi: Cc1200Spi<A>, Chip: Cc1200Chip<A>, Al: Alarm<T>, T: 
             .write_ext_regs(&mut *spi, &mut self.chip, ExtReg::TXLAST, &[1])
             .await;
 
+        if self.driver.last_status().state() == State::TX {
+            self.driver.strobe_idle_until_idle(&mut *spi, &mut self.chip).await;
+        }
+
         // Start transmitter
         self.driver
             .strobe(&mut *spi, &mut self.chip, Strobe::STX)
@@ -143,6 +147,10 @@ impl<Port: Cc1200Port, Spi: Cc1200Spi<A>, Chip: Cc1200Chip<A>, Al: Alarm<T>, T: 
         self.driver
             .write_ext_regs(&mut *spi, &mut self.chip, ExtReg::TXLAST, &[1])
             .await;
+        
+        if self.driver.last_status().state() == State::TX {
+            self.driver.strobe_idle_until_idle(&mut *spi, &mut self.chip).await;
+        }
 
         // Start transmitter.
         self.driver
@@ -200,5 +208,13 @@ impl<Port: Cc1200Port, Spi: Cc1200Spi<A>, Chip: Cc1200Chip<A>, Al: Alarm<T>, T: 
         self.driver
             .strobe(&mut *spi, &mut self.chip, Strobe::SRX)
             .await;
+    }
+}
+
+impl<Port: Cc1200Port, Al: Alarm<T>, T: Tick, A> Cc1200Drv<Port, Al, T, A> {
+    async fn strobe_idle_until_idle<Spi: Cc1200Spi<A>, Chip: Cc1200Chip<A>>(&mut self, spi: &mut Spi, chip: &mut Chip) {
+        self.strobe_until(spi, chip, Strobe::SIDLE, |status| {
+                status.state() == State::IDLE
+            }).await;
     }
 }

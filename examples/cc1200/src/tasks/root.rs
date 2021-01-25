@@ -2,7 +2,7 @@
 
 use crate::{adapters::Tim2Tick, consts, thr, thr::ThrsInit, Regs};
 use alloc::sync::Arc;
-use drone_cc1200_drv::{Cc1200Drv, controllers::DebugController, configs::CC1200_WMBUS_MODECMTO_FULL};
+use drone_cc1200_drv::{Cc1200Drv, Cc1200PartNumber, configs::CC1200_WMBUS_MODECMTO_FULL, controllers::DebugController};
 use drone_core::{log, sync::Mutex};
 use drone_cortexm::{
     drv::sys_tick::SysTick, periph_sys_tick, reg::prelude::*, swo, thr::prelude::*,
@@ -41,6 +41,7 @@ pub fn handler(reg: Regs, thr_init: ThrsInit) {
     // Enable interrupts.
     thr.rcc.enable_int();
     thr.exti_9_5.enable_int();
+    thr.tim_2.enable_int();
     thr.spi_1.enable_int();
     thr.dma_2_ch_2.enable_int();
     thr.dma_2_ch_3.enable_int();
@@ -165,9 +166,19 @@ pub fn handler(reg: Regs, thr_init: ThrsInit) {
     .ch1(|ch| ch.into_input_capture_pin(dr_pin))
     .into_trigger_slave_of(tim2.link);
 
+    tim2.start();
+
     let alarm = Arc::new(AlarmDrv::new(tim2.counter, tim2.ch1, Tim2Tick));
 
     // Initialize CC1200
+    // LA Colors:
+    // 0. MISO: Grey
+    // 2. RF_CS: Red
+    // 3. EE_CS: Orange
+    // 4. CLK: Yellow
+    // 5. DATA_RDY: Green
+    // 6. MOSI: Blue
+    // 7. RESET: Purple
     let cc1200_port = crate::adapters::cc1200::Port {
         reset_pin,
         miso_exti_line: exti6.line(miso_pin_reset),
@@ -176,14 +187,17 @@ pub fn handler(reg: Regs, thr_init: ThrsInit) {
 
     cc1200.hw_reset(&mut chip).root_wait().unwrap_or_default();
 
-    let pn = cc1200.read_part_number(&mut spi, &mut chip).root_wait();
-
+    assert_eq!(Cc1200PartNumber::Cc1200, cc1200.read_part_number(&mut spi, &mut chip).root_wait().unwrap());
 
     let spi = Arc::new(Mutex::new(spi));
     let mut debug = DebugController::setup(cc1200, spi, chip, &CC1200_WMBUS_MODECMTO_FULL).root_wait().unwrap();
 
     debug.tx_unmodulated().root_wait();
-    alarm.sleep(TimeSpan::from_secs(10)).root_wait();
+    alarm.sleep(TimeSpan::from_secs(3)).root_wait();
+    debug.tx_modulated_01().root_wait();
+    alarm.sleep(TimeSpan::from_secs(3)).root_wait();
+    debug.tx_modulated_pn9().root_wait();
+    alarm.sleep(TimeSpan::from_secs(3)).root_wait();
     debug.idle().root_wait();
 
     // Enter a sleep state on ISR exit.

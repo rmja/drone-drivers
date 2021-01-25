@@ -1,7 +1,4 @@
-use crate::{
-    opcode::{ExtReg, Opcode, Reg, Strobe},
-    Cc1200Chip, Cc1200Config, Cc1200Port, Cc1200Spi, StatusByte,
-};
+use crate::{Cc1200Chip, Cc1200Config, Cc1200Port, Cc1200Spi, StatusByte, Cc1200PartNumber, opcode::{ExtReg, Opcode, Reg, Strobe}};
 use alloc::sync::Arc;
 use core::cell::Cell;
 use core::marker::PhantomData;
@@ -23,6 +20,9 @@ pub struct Rssi(i8);
 
 #[derive(Debug)]
 pub struct TimeoutError;
+
+#[derive(Debug)]
+pub struct InvalidPartNumber;
 
 impl<Port: Cc1200Port, Al: Alarm<T>, T: Tick, A> Cc1200Drv<Port, Al, T, A> {
     pub fn init(mut port: Port, alarm: Arc<Al>) -> Self {
@@ -56,25 +56,22 @@ impl<Port: Cc1200Port, Al: Alarm<T>, T: Tick, A> Cc1200Drv<Port, Al, T, A> {
         result
     }
 
+    pub fn last_status(&self) -> StatusByte {
+        self.status.get()
+    }
+
     pub async fn read_part_number<Spi: Cc1200Spi<A>, Chip: Cc1200Chip<A>>(
         &self,
         spi: &mut Spi,
         chip: &mut Chip,
-    ) -> u8 {
-        const CMD_LEN: usize = 3;
-        const CMD: [u8; CMD_LEN] = [
-            Opcode::ReadSingle(Reg::EXTENDED_ADDRESS).val(),
-            ExtReg::PARTNUMBER as u8,
-            0,
-        ];
-        let mut rx_buf: [u8; CMD_LEN] = [0; CMD_LEN];
-
-        chip.select();
-        spi.xfer(&CMD, &mut rx_buf).await;
-        chip.deselect();
-        self.status.set(StatusByte(rx_buf[0]));
-
-        rx_buf[2]
+    ) -> Result<Cc1200PartNumber, InvalidPartNumber> {
+        let mut buf = [0];
+        self.read_ext_regs(spi, chip, ExtReg::PARTNUMBER, &mut buf).await;
+        match buf[0] {
+            0x20 => Ok(Cc1200PartNumber::Cc1200),
+            0x21 => Ok(Cc1200PartNumber::Cc1201),
+            _ => Err(InvalidPartNumber)
+        }
     }
 
     /// Write configuration values.

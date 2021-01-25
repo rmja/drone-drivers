@@ -11,7 +11,7 @@ pub struct StatusByte(pub u8);
 
 #[allow(dead_code)]
 #[allow(non_camel_case_types)]
-#[derive(Copy, Clone, PartialEq)]
+#[derive(Copy, Clone, Debug, PartialEq)]
 #[repr(u8)]
 pub enum State {
     IDLE = 0b000,

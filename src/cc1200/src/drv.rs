@@ -1,4 +1,4 @@
-use crate::{Cc1200Chip, Cc1200Config, Cc1200Port, Cc1200Spi, StatusByte, Cc1200PartNumber, opcode::{ExtReg, Opcode, Reg, Strobe}};
+use crate::{Cc1200Chip, Cc1200Config, Cc1200PartNumber, Cc1200Port, Cc1200Spi, State, StatusByte, opcode::{ExtReg, Opcode, Reg, Strobe}, regs::Rssi1};
 use alloc::sync::Arc;
 use core::cell::Cell;
 use core::marker::PhantomData;
@@ -23,6 +23,9 @@ pub struct TimeoutError;
 
 #[derive(Debug)]
 pub struct InvalidPartNumber;
+
+#[derive(Debug)]
+pub struct InvalidRssi;
 
 impl<Port: Cc1200Port, Al: Alarm<T>, T: Tick, A> Cc1200Drv<Port, Al, T, A> {
     pub fn init(mut port: Port, alarm: Arc<Al>) -> Self {
@@ -219,7 +222,7 @@ impl<Port: Cc1200Port, Al: Alarm<T>, T: Tick, A> Cc1200Drv<Port, Al, T, A> {
         &self,
         spi: &mut Spi,
         chip: &mut Chip,
-    ) -> Rssi {
+    ) -> Result<Rssi, InvalidRssi> {
         const CMD_LEN: usize = 3;
         const CMD: [u8; CMD_LEN] = [
             Opcode::ReadSingle(Reg::EXTENDED_ADDRESS).val(),
@@ -233,7 +236,11 @@ impl<Port: Cc1200Port, Al: Alarm<T>, T: Tick, A> Cc1200Drv<Port, Al, T, A> {
         self.status.set(StatusByte(rx_buf[0]));
         chip.deselect();
 
-        Rssi(rx_buf[2] as i8 + self.rssi_offset.0)
+        let rssi = rx_buf[2] as i8;
+        match rssi {
+            -128 => Err(InvalidRssi),
+            rssi => Ok(Rssi(rssi + self.rssi_offset.0)),
+        }
     }
 
     pub async fn read_fifo<Spi: Cc1200Spi<A>, Chip: Cc1200Chip<A>>(
@@ -258,16 +265,16 @@ impl<Port: Cc1200Port, Al: Alarm<T>, T: Tick, A> Cc1200Drv<Port, Al, T, A> {
         ];
         let mut rx_buf: [u8; CMD_LEN] = [0; CMD_LEN];
 
+        let len = 1 + buf.len();
         chip.select();
-        spi.xfer(&CMD, &mut rx_buf).await;
+        spi.xfer(&CMD[..len], &mut rx_buf[..len]).await;
         self.status.set(StatusByte(rx_buf[0]));
         chip.deselect();
 
-        let len = buf.len();
-        buf[..len].copy_from_slice(&rx_buf[1..(1 + len)]);
+        buf.copy_from_slice(&rx_buf[1..len]);
     }
 
-    pub async fn read_rssi_fifo<Spi: Cc1200Spi<A>, Chip: Cc1200Chip<A>>(
+    pub async fn read_rssi_and_fifo<Spi: Cc1200Spi<A>, Chip: Cc1200Chip<A>>(
         &self,
         spi: &mut Spi,
         chip: &mut Chip,
@@ -291,14 +298,17 @@ impl<Port: Cc1200Port, Al: Alarm<T>, T: Tick, A> Cc1200Drv<Port, Al, T, A> {
         ];
         let mut rx_buf: [u8; CMD_LEN] = [0; CMD_LEN];
 
+        let len = 3 + 1 + buf.len();
         chip.select();
-        spi.xfer(&CMD, &mut rx_buf).await;
+        spi.xfer(&CMD[..len], &mut rx_buf[..len]).await;
         self.status.set(StatusByte(rx_buf[0]));
         chip.deselect();
 
-        let len = buf.len();
-        buf[..len].copy_from_slice(&rx_buf[1..(1 + len)]);
-        Rssi(rx_buf[2] as i8 + self.rssi_offset.0)
+        buf.copy_from_slice(&rx_buf[4..len]);
+
+        let rssi = rx_buf[2] as i8;
+        assert_ne!(-128, rssi);
+        Rssi(rssi + self.rssi_offset.0)
     }
 
     /// Wait for the xtal to stabilize.
@@ -357,5 +367,11 @@ impl<Port: Cc1200Port, Al: Alarm<T>, T: Tick, A> Cc1200Drv<Port, Al, T, A> {
             }
         }
         chip.deselect();
+    }
+
+    pub async fn strobe_until_idle<Spi: Cc1200Spi<A>, Chip: Cc1200Chip<A>>(&mut self, spi: &mut Spi, chip: &mut Chip, strobe: Strobe) {
+        self.strobe_until(spi, chip, strobe, |status| {
+                status.state() == State::IDLE
+            }).await;
     }
 }

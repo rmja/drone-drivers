@@ -1,5 +1,5 @@
 [memory.flash]
-size = "512K"
+size = "1024K"
 origin = 0x08000000
 
 [memory.ram]

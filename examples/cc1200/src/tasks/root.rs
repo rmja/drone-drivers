@@ -1,8 +1,8 @@
 //! The root task.
 
-use crate::{adapters::Tim2Tick, consts, thr, thr::ThrsInit, Regs};
+use crate::{consts, thr, thr::ThrsInit, Regs};
 use alloc::sync::Arc;
-use drone_cc1200_drv::{Cc1200Drv, Cc1200PartNumber, configs::CC1200_WMBUS_MODECMTO_FULL, controllers::DebugController};
+use drone_cc1200_drv::{Cc1200Drv, Cc1200PartNumber, configs::CC1200_WMBUS_MODECMTO_FULL, controllers::{DebugController, InfiniteController}};
 use drone_core::{log, sync::Mutex};
 use drone_cortexm::{
     drv::sys_tick::SysTick, periph_sys_tick, reg::prelude::*, swo, thr::prelude::*,
@@ -26,8 +26,9 @@ use drone_stm32f4_hal::{
     spi::{chipctrl::*, config::*, prelude::*, SpiDrv},
     tim::{prelude::*, GeneralTimCfg, GeneralTimSetup},
 };
-use drone_time::{Alarm, TimeSpan};
+use drone_time::{Alarm, TimeSpan, UptimeDrv};
 use drone_time::AlarmDrv;
+use futures::prelude::*;
 
 /// The root task handler.
 #[inline(never)]
@@ -42,6 +43,7 @@ pub fn handler(reg: Regs, thr_init: ThrsInit) {
     thr.rcc.enable_int();
     thr.exti_9_5.enable_int();
     thr.tim_2.enable_int();
+    thr.tim_4.enable_int();
     thr.spi_1.enable_int();
     thr.dma_2_ch_2.enable_int();
     thr.dma_2_ch_3.enable_int();
@@ -77,25 +79,25 @@ pub fn handler(reg: Regs, thr_init: ThrsInit) {
         .into_alternate()
         .into_pushpull()
         .into_nopull()
-        .with_speed(GpioPinSpeed::HighSpeed);
+        .with_speed(GpioPinSpeed::MediumSpeed);
     let miso_pin = gpio_a
         .pin(periph_gpio_a6!(reg))
         .into_alternate()
         .into_pushpull()
         .into_nopull()
-        .with_speed(GpioPinSpeed::HighSpeed);
+        .with_speed(GpioPinSpeed::MediumSpeed);
     let mosi_pin = gpio_a
         .pin(periph_gpio_a7!(reg))
         .into_alternate()
         .into_pushpull()
         .into_nopull()
-        .with_speed(GpioPinSpeed::HighSpeed);
+        .with_speed(GpioPinSpeed::MediumSpeed);
     let cs_pin = gpio_b
         .pin(periph_gpio_b0!(reg))
         .into_output()
         .into_pushpull()
         .into_pullup()
-        .with_speed(GpioPinSpeed::HighSpeed);
+        .with_speed(GpioPinSpeed::MediumSpeed);
 
     let miso_pin_reset = unsafe { miso_pin.clone() };
 
@@ -138,7 +140,8 @@ pub fn handler(reg: Regs, thr_init: ThrsInit) {
         .pin(periph_gpio_d12!(reg))
         .into_alternate()
         .into_pushpull()
-        .into_pulldown();
+        .into_pulldown()
+        .with_speed(GpioPinSpeed::MediumSpeed);
     let reset_pin = gpio_b
         .pin(periph_gpio_b8!(reg))
         .into_output()
@@ -166,9 +169,10 @@ pub fn handler(reg: Regs, thr_init: ThrsInit) {
     .ch1(|ch| ch.into_input_capture_pin(dr_pin))
     .into_trigger_slave_of(tim2.link);
 
-    tim2.start();
+    tim2.start(); // Also starts tim4
 
-    let alarm = Arc::new(AlarmDrv::new(tim2.counter, tim2.ch1, Tim2Tick));
+    let uptime = UptimeDrv::new(tim2.counter.clone(), tim2.overflow, thr.tim_2, consts::Tim2Tick);
+    let alarm = Arc::new(AlarmDrv::new(tim2.counter, tim2.ch1, consts::Tim2Tick));
 
     // Initialize CC1200
     // LA Colors:
@@ -190,15 +194,23 @@ pub fn handler(reg: Regs, thr_init: ThrsInit) {
     assert_eq!(Cc1200PartNumber::Cc1200, cc1200.read_part_number(&mut spi, &mut chip).root_wait().unwrap());
 
     let spi = Arc::new(Mutex::new(spi));
-    let mut debug = DebugController::setup(cc1200, spi, chip, &CC1200_WMBUS_MODECMTO_FULL).root_wait().unwrap();
+    // let mut debug = DebugController::setup(cc1200, spi.clone(), chip, &CC1200_WMBUS_MODECMTO_FULL).root_wait().unwrap();
 
-    debug.tx_unmodulated().root_wait();
-    alarm.sleep(TimeSpan::from_secs(3)).root_wait();
-    debug.tx_modulated_01().root_wait();
-    alarm.sleep(TimeSpan::from_secs(3)).root_wait();
-    debug.tx_modulated_pn9().root_wait();
-    alarm.sleep(TimeSpan::from_secs(3)).root_wait();
-    debug.idle().root_wait();
+    // debug.tx_unmodulated().root_wait();
+    // alarm.sleep(TimeSpan::from_secs(3)).root_wait();
+    // debug.tx_modulated_01().root_wait();
+    // alarm.sleep(TimeSpan::from_secs(3)).root_wait();
+    // debug.tx_modulated_pn9().root_wait();
+    // alarm.sleep(TimeSpan::from_secs(3)).root_wait();
+    // debug.idle().root_wait();
+
+    // let (cc1200, chip) = debug.release();
+    let mut infinite = InfiniteController::setup(cc1200, spi.clone(), chip, tim4.ch1, uptime, &CC1200_WMBUS_MODECMTO_FULL).root_wait().unwrap();
+
+    let rx_stream = infinite.rx_stream(1).root_wait();
+    // while let Some(whoot) = rx_stream.next().root_wait() {
+
+    // }
 
     // Enter a sleep state on ISR exit.
     reg.scb_scr.sleeponexit.set_bit();

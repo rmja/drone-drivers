@@ -1,11 +1,3 @@
-use crate::consts;
-use drone_time::Tick;
-
-pub struct Tim2Tick;
-impl Tick for Tim2Tick {
-    const FREQ: u32 = consts::TIM2_FREQ;
-}
-
 pub(crate) mod cc1200 {
     use async_trait::async_trait;
     use drone_cc1200_drv::Cc1200Port;
@@ -67,8 +59,6 @@ pub(crate) mod cc1200 {
     // #[async_trait]
     // impl<Tim: GeneralTimMap, Int: ThrToken, Ch> Cc1200Timer<Adapters> for Alarm<Tim, Int, Ch, OutputCompareMode> {
     //     async fn sleep_ms(&mut self, ms: u32) {
-    //         let duration = (ms * crate::consts::SYSTICKCLK.f()) / 1000;
-    //         self.sleep(duration).await;
     //     }
     // }
 }

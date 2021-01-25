@@ -33,6 +33,8 @@ impl<Port: Cc1200Port, Spi: Cc1200Spi<A>, Chip: Cc1200Chip<A>, Al: Alarm<T>, T: 
         chip: Chip,
         config: &'static Cc1200Config<'static>,
     ) -> Result<Self, TimeoutError> {
+        assert!(config.is_full());
+
         let mut ctrl = Self {
             driver,
             spi,
@@ -47,7 +49,7 @@ impl<Port: Cc1200Port, Spi: Cc1200Spi<A>, Chip: Cc1200Chip<A>, Al: Alarm<T>, T: 
 
     pub async fn idle(&mut self) {
         let mut spi = self.spi.try_lock().unwrap();
-        self.driver.strobe_idle_until_idle(&mut *spi, &mut self.chip).await;
+        self.driver.strobe_until_idle(&mut *spi, &mut self.chip, Strobe::SIDLE).await;
     }
 
     pub async fn tx_unmodulated(&mut self) {
@@ -78,7 +80,7 @@ impl<Port: Cc1200Port, Spi: Cc1200Spi<A>, Chip: Cc1200Chip<A>, Al: Alarm<T>, T: 
             .await;
 
         if self.driver.last_status().state() == State::TX {
-            self.driver.strobe_idle_until_idle(&mut *spi, &mut self.chip).await;
+            self.driver.strobe_until_idle(&mut *spi, &mut self.chip, Strobe::SIDLE).await;
         }
 
         // Start transmitter
@@ -117,7 +119,7 @@ impl<Port: Cc1200Port, Spi: Cc1200Spi<A>, Chip: Cc1200Chip<A>, Al: Alarm<T>, T: 
             .await;
 
         if self.driver.last_status().state() == State::TX {
-            self.driver.strobe_idle_until_idle(&mut *spi, &mut self.chip).await;
+            self.driver.strobe_until_idle(&mut *spi, &mut self.chip, Strobe::SIDLE).await;
         }
 
         // Start transmitter
@@ -149,7 +151,7 @@ impl<Port: Cc1200Port, Spi: Cc1200Spi<A>, Chip: Cc1200Chip<A>, Al: Alarm<T>, T: 
             .await;
         
         if self.driver.last_status().state() == State::TX {
-            self.driver.strobe_idle_until_idle(&mut *spi, &mut self.chip).await;
+            self.driver.strobe_until_idle(&mut *spi, &mut self.chip, Strobe::SIDLE).await;
         }
 
         // Start transmitter.
@@ -209,12 +211,8 @@ impl<Port: Cc1200Port, Spi: Cc1200Spi<A>, Chip: Cc1200Chip<A>, Al: Alarm<T>, T: 
             .strobe(&mut *spi, &mut self.chip, Strobe::SRX)
             .await;
     }
-}
 
-impl<Port: Cc1200Port, Al: Alarm<T>, T: Tick, A> Cc1200Drv<Port, Al, T, A> {
-    async fn strobe_idle_until_idle<Spi: Cc1200Spi<A>, Chip: Cc1200Chip<A>>(&mut self, spi: &mut Spi, chip: &mut Chip) {
-        self.strobe_until(spi, chip, Strobe::SIDLE, |status| {
-                status.state() == State::IDLE
-            }).await;
+    pub fn release(self) -> (Cc1200Drv<Port, Al, T, A>, Chip) {
+        (self.driver, self.chip)
     }
 }

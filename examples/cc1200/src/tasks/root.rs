@@ -132,10 +132,10 @@ pub fn handler(reg: Regs, thr_init: ThrsInit) {
     let spi_drv = SpiDrv::init(setup);
     let mut spi = spi_drv.init_master(miso_dma, mosi_dma);
 
-    let mut chip = SpiChip::as_deselected(cs_pin);
+    let mut chip = SpiChip::new_deselected(cs_pin);
 
     // Deselect other SPI devices on same bus
-    SpiChip::as_deselected(
+    SpiChip::new_deselected(
         gpio_i
             .pin(periph_gpio_i1!(reg))
             .into_output()

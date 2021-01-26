@@ -1,5 +1,3 @@
-cargo-features = ["resolver"]
-
 [package]
 name = "drone-cc1200-drv"
 version = "0.1.0"

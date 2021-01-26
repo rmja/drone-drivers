@@ -1,56 +1,16 @@
-use core::{pin::Pin, task::{Context, Poll}};
-
+use core::pin::Pin;
 use futures::Stream;
-use alloc::boxed::Box;
+use alloc::{boxed::Box, sync::Arc};
 
 pub trait Cc1200Timer<A> {
-    // type Ctrl: Cc1200CaptureControl;
+    /// Get a pin handle to be used to get the current capture pin state.
+    fn pin(&self) -> Arc<dyn Cc1200TimerPin<A>>;
 
-    fn clear_pending_capture(&mut self);
+    /// Get a stream of timer capture values.
     fn capture_overwriting_stream<'a>(&'a mut self, capacity: usize) -> Pin<Box<dyn Stream<Item = u32> + 'a>>;
 }
 
-// pub trait Cc1200CaptureControl: Send {
-//     /// Get the current value of the capture pin.
-//     fn get(&self) -> bool;
-
-//     /// Stop the capture stream.
-//     fn stop(&mut self);
-// }
-
-// pub struct Cc1200CaptureStream<'a, Ctrl: Cc1200CaptureControl> {
-//     ctrl: &'a mut Ctrl,
-//     stream: Pin<Box<dyn Stream<Item = u32> + Send + 'a>>,
-// }
-
-// impl<'a, Ctrl: Cc1200CaptureControl> Cc1200CaptureStream<'a, Ctrl> {
-//     pub fn new(stop: &'a mut Ctrl, stream: Pin<Box<dyn Stream<Item = u32> + Send + 'a>>) -> Self {
-//         Self { ctrl: stop, stream }
-//     }
-
-//     pub fn get(&self) -> bool {
-//         self.ctrl.get()
-//     }
-
-//     /// Stop the capture stream.
-//     #[inline]
-//     pub fn stop(mut self: Pin<&mut Self>) {
-//         self.ctrl.stop();
-//     }
-// }
-
-// impl<Ctrl: Cc1200CaptureControl> Stream for Cc1200CaptureStream<'_, Ctrl> {
-//     type Item = u32;
-
-//     #[inline]
-//     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-//         self.stream.as_mut().poll_next(cx)
-//     }
-// }
-
-// impl<Ctrl: Cc1200CaptureControl> Drop for Cc1200CaptureStream<'_, Ctrl> {
-//     #[inline]
-//     fn drop(&mut self) {
-//         self.ctrl.stop();
-//     }
-// }
+pub trait Cc1200TimerPin<A>: Send {
+    /// Get the current pin state.
+    fn get(&self) -> bool;
+}

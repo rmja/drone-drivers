@@ -20,8 +20,10 @@ pub enum Cc1200PartNumber {
     Cc1201,
 }
 
+pub struct Rssi(pub i8);
+
 pub use self::{
-    adapters::{chip::Cc1200Chip, port::Cc1200Port, spi::Cc1200Spi, timer::Cc1200Timer, uptime::Cc1200Uptime},
+    adapters::{chip::Cc1200Chip, port::Cc1200Port, spi::Cc1200Spi, timer::{Cc1200Timer, Cc1200TimerPin}, uptime::Cc1200Uptime},
     config::Cc1200Config,
     drv::{Cc1200Drv, TimeoutError},
     statusbyte::{State, StatusByte},

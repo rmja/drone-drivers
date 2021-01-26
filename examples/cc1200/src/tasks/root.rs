@@ -48,6 +48,9 @@ pub fn handler(reg: Regs, thr_init: ThrsInit) {
     thr.dma_2_ch_2.enable_int();
     thr.dma_2_ch_3.enable_int();
 
+    thr.tim_4.set_priority(10);
+    thr.spi_1.set_priority(9);
+
     // Initialize clocks.
     let rcc = Rcc::init(RccSetup::new(periph_rcc!(reg), thr.rcc));
     let pwr = Pwr::init(periph_pwr!(reg));
@@ -207,10 +210,10 @@ pub fn handler(reg: Regs, thr_init: ThrsInit) {
     // let (cc1200, chip) = debug.release();
     let mut infinite = InfiniteController::setup(cc1200, spi.clone(), chip, tim4.ch1, uptime, &CC1200_WMBUS_MODECMTO_FULL).root_wait().unwrap();
 
-    let rx_stream = infinite.rx_stream(1).root_wait();
-    // while let Some(whoot) = rx_stream.next().root_wait() {
-
-    // }
+    let mut rx_stream = infinite.rx_stream(1).root_wait();
+    while let Some(whoot) = rx_stream.next().root_wait() {
+        // println!("{:?}", whoot.upstamp);
+    }
 
     // Enter a sleep state on ISR exit.
     reg.scb_scr.sleeponexit.set_bit();

@@ -1,3 +1,5 @@
+#![rustfmt::skip]
+
 use drone_core::bitfield::Bitfield;
 
 #[derive(Clone, Copy, Bitfield)]

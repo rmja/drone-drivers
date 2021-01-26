@@ -19,7 +19,10 @@ impl Tick for Tim2Tick {
     const FREQ: u32 = TIM2_FREQ;
 }
 
-impl<Cnt: UptimeCounter<Tim2Tick, A>, Ovf: UptimeOverflow<A>, A: Send + Sync + 'static> Cc1200Uptime<Tim2Tick, drone_cc1200_drv::drivers::stm32f4::Adapter> for UptimeDrv<Tim2Tick, Cnt, Ovf, A> {
+impl<Cnt: UptimeCounter<Tim2Tick, A>, Ovf: UptimeOverflow<A>, A: Send + Sync + 'static>
+    Cc1200Uptime<Tim2Tick, drone_cc1200_drv::drivers::stm32f4::Adapter>
+    for UptimeDrv<Tim2Tick, Cnt, Ovf, A>
+{
     fn upstamp(&self, capture: u32) -> TimeSpan<Tim2Tick> {
         // The uptime counter and the captured value are synchronous.
         self.at(capture)

@@ -5,7 +5,12 @@ use drone_core::sync::Mutex;
 use drone_time::{Alarm, Tick, TimeSpan};
 use futures::prelude::*;
 
-use crate::{Cc1200Chip, Cc1200Config, Cc1200Drv, Cc1200Port, Cc1200Spi, Cc1200Timer, Cc1200Uptime, Rssi, State, TimeoutError, opcode::{Reg, Strobe}, regs::FifoCfg};
+use crate::{
+    opcode::{Reg, Strobe},
+    regs::FifoCfg,
+    Cc1200Chip, Cc1200Config, Cc1200Drv, Cc1200Port, Cc1200Spi, Cc1200Timer, Cc1200Uptime, Rssi,
+    State, TimeoutError,
+};
 
 pub struct InfiniteController<
     Port: Cc1200Port,
@@ -26,7 +31,7 @@ pub struct InfiniteController<
 }
 
 pub struct RxChunk<T: Tick> {
-    /// The upstamp sampled after `fifo_thr` bytes. 
+    /// The upstamp sampled after `fifo_thr` bytes.
     pub upstamp: TimeSpan<T>,
     /// The rssi sampled after `fifo_thr` bytes.
     pub rssi: Rssi,
@@ -34,8 +39,17 @@ pub struct RxChunk<T: Tick> {
     pub bytes: Vec<u8>,
 }
 
-impl<Port: Cc1200Port, Spi: Cc1200Spi<A>, Chip: Cc1200Chip<A>, Tim: Cc1200Timer<A>, Upt: Cc1200Uptime<T, A>, Al: Alarm<T>, T: Tick, A>
-InfiniteController<Port, Spi, Chip, Tim, Upt, Al, T, A> {
+impl<
+        Port: Cc1200Port,
+        Spi: Cc1200Spi<A>,
+        Chip: Cc1200Chip<A>,
+        Tim: Cc1200Timer<A>,
+        Upt: Cc1200Uptime<T, A>,
+        Al: Alarm<T>,
+        T: Tick,
+        A,
+    > InfiniteController<Port, Spi, Chip, Tim, Upt, Al, T, A>
+{
     pub async fn setup(
         driver: Cc1200Drv<Port, Al, T, A>,
         spi: Arc<Mutex<Spi>>,
@@ -49,9 +63,7 @@ InfiniteController<Port, Spi, Chip, Tim, Upt, Al, T, A> {
         driver.hw_reset(&mut chip).await?;
 
         let mut spi_sess = spi.try_lock().unwrap();
-        driver
-            .write_config(&mut *spi_sess, &mut chip, config)
-            .await;
+        driver.write_config(&mut *spi_sess, &mut chip, config).await;
         drop(spi_sess);
 
         Ok(Self {
@@ -67,15 +79,22 @@ InfiniteController<Port, Spi, Chip, Tim, Upt, Al, T, A> {
     pub async fn idle(&mut self) {
         let mut spi = self.spi.try_lock().unwrap();
         let mut chip = self.chip.borrow_mut();
-        self.driver.strobe_until_idle(&mut *spi, &mut *chip, Strobe::SIDLE).await;
+        self.driver
+            .strobe_until_idle(&mut *spi, &mut *chip, Strobe::SIDLE)
+            .await;
     }
 
-    pub async fn rx_stream<'a>(&'a mut self, capacity: usize) -> Pin<Box<dyn Stream<Item = RxChunk<T>> + 'a>> {
+    pub async fn rx_stream<'a>(
+        &'a mut self,
+        capacity: usize,
+    ) -> Pin<Box<dyn Stream<Item = RxChunk<T>> + 'a>> {
         let mut spi = self.spi.try_lock().unwrap();
         let mut chip = self.chip.borrow_mut();
 
         // Flush RX buffer
-        self.driver.strobe_until_idle(&mut *spi, &mut *chip, Strobe::SFRX).await;
+        self.driver
+            .strobe_until_idle(&mut *spi, &mut *chip, Strobe::SFRX)
+            .await;
 
         let timer_pin = self.timer.pin();
         let capture_stream = self.timer.capture_overwriting_stream(capacity);
@@ -83,7 +102,7 @@ InfiniteController<Port, Spi, Chip, Tim, Upt, Al, T, A> {
         // Start receiver.
         self.driver.strobe(&mut *spi, &mut *chip, Strobe::SRX).await;
         // Do not wait for calibration and settling.
-        
+
         drop(spi);
 
         let uptime = self.uptime.clone();
@@ -107,19 +126,21 @@ InfiniteController<Port, Spi, Chip, Tim, Upt, Al, T, A> {
                 // Read until data-ready goes low.
                 while timer_pin.get() {
                     let mut rx_buf = vec![0; fifo_thr];
-                    let chunk_rssi = driver.read_rssi_and_fifo(&mut *spi, &mut *chip, &mut rx_buf).await;
+                    let chunk_rssi = driver
+                        .read_rssi_and_fifo(&mut *spi, &mut *chip, &mut rx_buf)
+                        .await;
                     if rssi.is_none() {
                         rssi = Some(chunk_rssi);
                     }
 
                     match driver.last_status().state() {
-                        State::RX => {},
-                        State::CALIBRATE => {},
-                        State::SETTLING => {},
+                        State::RX => {}
+                        State::CALIBRATE => {}
+                        State::SETTLING => {}
                         State::RX_FIFO_ERROR => {
                             // Flush RX buffer
                             driver.strobe(&mut *spi, &mut *chip, Strobe::SFRX).await;
-                        },
+                        }
                         state => {
                             panic!("Unrecoverable state {:?}", state);
                         }
@@ -128,12 +149,10 @@ InfiniteController<Port, Spi, Chip, Tim, Upt, Al, T, A> {
                     bytes.append(&mut rx_buf);
                 }
 
-                rssi.map(|rssi| {
-                    RxChunk {
-                        upstamp,
-                        rssi,
-                        bytes
-                    }
+                rssi.map(|rssi| RxChunk {
+                    upstamp,
+                    rssi,
+                    bytes,
                 })
             }
         });
@@ -141,7 +160,14 @@ InfiniteController<Port, Spi, Chip, Tim, Upt, Al, T, A> {
         Box::pin(chunk_stream)
     }
 
-    pub fn release(self) -> Cc1200Drv<Port, Al, T, A> {
-        Arc::try_unwrap(self.driver).map_err(|_| ()).expect("Unable to unwrap driver")
+    pub fn release(self) -> (Cc1200Drv<Port, Al, T, A>, Chip, Tim) {
+        let drv = Arc::try_unwrap(self.driver)
+            .map_err(|_| ())
+            .expect("Unable to unwrap driver");
+        let chip = Arc::try_unwrap(self.chip)
+            .map_err(|_| ())
+            .expect("Unable to unwrap chip");
+
+        (drv, chip.into_inner(), self.timer)
     }
 }

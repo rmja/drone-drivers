@@ -49,7 +49,9 @@ impl<Port: Cc1200Port, Spi: Cc1200Spi<A>, Chip: Cc1200Chip<A>, Al: Alarm<T>, T: 
 
     pub async fn idle(&mut self) {
         let mut spi = self.spi.try_lock().unwrap();
-        self.driver.strobe_until_idle(&mut *spi, &mut self.chip, Strobe::SIDLE).await;
+        self.driver
+            .strobe_until_idle(&mut *spi, &mut self.chip, Strobe::SIDLE)
+            .await;
     }
 
     pub async fn tx_unmodulated(&mut self) {
@@ -80,7 +82,9 @@ impl<Port: Cc1200Port, Spi: Cc1200Spi<A>, Chip: Cc1200Chip<A>, Al: Alarm<T>, T: 
             .await;
 
         if self.driver.last_status().state() == State::TX {
-            self.driver.strobe_until_idle(&mut *spi, &mut self.chip, Strobe::SIDLE).await;
+            self.driver
+                .strobe_until_idle(&mut *spi, &mut self.chip, Strobe::SIDLE)
+                .await;
         }
 
         // Start transmitter
@@ -119,7 +123,9 @@ impl<Port: Cc1200Port, Spi: Cc1200Spi<A>, Chip: Cc1200Chip<A>, Al: Alarm<T>, T: 
             .await;
 
         if self.driver.last_status().state() == State::TX {
-            self.driver.strobe_until_idle(&mut *spi, &mut self.chip, Strobe::SIDLE).await;
+            self.driver
+                .strobe_until_idle(&mut *spi, &mut self.chip, Strobe::SIDLE)
+                .await;
         }
 
         // Start transmitter
@@ -149,9 +155,11 @@ impl<Port: Cc1200Port, Spi: Cc1200Spi<A>, Chip: Cc1200Chip<A>, Al: Alarm<T>, T: 
         self.driver
             .write_ext_regs(&mut *spi, &mut self.chip, ExtReg::TXLAST, &[1])
             .await;
-        
+
         if self.driver.last_status().state() == State::TX {
-            self.driver.strobe_until_idle(&mut *spi, &mut self.chip, Strobe::SIDLE).await;
+            self.driver
+                .strobe_until_idle(&mut *spi, &mut self.chip, Strobe::SIDLE)
+                .await;
         }
 
         // Start transmitter.

@@ -1,4 +1,7 @@
-use crate::{Cc1200Chip, Cc1200Config, Cc1200PartNumber, Cc1200Port, Cc1200Spi, Rssi, State, StatusByte, opcode::{ExtReg, Opcode, Reg, Strobe}};
+use crate::{
+    opcode::{ExtReg, Opcode, Reg, Strobe},
+    Cc1200Chip, Cc1200Config, Cc1200PartNumber, Cc1200Port, Cc1200Spi, Rssi, State, StatusByte,
+};
 use alloc::sync::Arc;
 use core::cell::{Cell, RefCell};
 use core::marker::PhantomData;
@@ -39,10 +42,7 @@ impl<Port: Cc1200Port, Al: Alarm<T>, T: Tick, A> Cc1200Drv<Port, Al, T, A> {
         }
     }
 
-    pub async fn hw_reset<Chip: Cc1200Chip<A>>(
-        &self,
-        chip: &mut Chip,
-    ) -> Result<(), TimeoutError> {
+    pub async fn hw_reset<Chip: Cc1200Chip<A>>(&self, chip: &mut Chip) -> Result<(), TimeoutError> {
         // Reset chip.
         let mut port = self.port.borrow_mut();
         port.clear_reset(); // Trigger chip reset pin.
@@ -68,11 +68,12 @@ impl<Port: Cc1200Port, Al: Alarm<T>, T: Tick, A> Cc1200Drv<Port, Al, T, A> {
         chip: &mut Chip,
     ) -> Result<Cc1200PartNumber, InvalidPartNumber> {
         let mut buf = [0];
-        self.read_ext_regs(spi, chip, ExtReg::PARTNUMBER, &mut buf).await;
+        self.read_ext_regs(spi, chip, ExtReg::PARTNUMBER, &mut buf)
+            .await;
         match buf[0] {
             0x20 => Ok(Cc1200PartNumber::Cc1200),
             0x21 => Ok(Cc1200PartNumber::Cc1201),
-            _ => Err(InvalidPartNumber)
+            _ => Err(InvalidPartNumber),
         }
     }
 
@@ -369,9 +370,13 @@ impl<Port: Cc1200Port, Al: Alarm<T>, T: Tick, A> Cc1200Drv<Port, Al, T, A> {
         chip.deselect();
     }
 
-    pub async fn strobe_until_idle<Spi: Cc1200Spi<A>, Chip: Cc1200Chip<A>>(&self, spi: &mut Spi, chip: &mut Chip, strobe: Strobe) {
-        self.strobe_until(spi, chip, strobe, |status| {
-                status.state() == State::IDLE
-            }).await;
+    pub async fn strobe_until_idle<Spi: Cc1200Spi<A>, Chip: Cc1200Chip<A>>(
+        &self,
+        spi: &mut Spi,
+        chip: &mut Chip,
+        strobe: Strobe,
+    ) {
+        self.strobe_until(spi, chip, strobe, |status| status.state() == State::IDLE)
+            .await;
     }
 }

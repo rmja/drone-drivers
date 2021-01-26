@@ -9,8 +9,10 @@ pub struct Cc1200Config<'a> {
 
 impl Cc1200Config<'_> {
     pub fn is_full(&self) -> bool {
-        self.first == Reg::IOCFG3 && Reg::IOCFG3 as usize + self.values.len() - 1 == Reg::PKT_LEN as usize &&
-        self.ext_first == ExtReg::IF_MIX_CFG && ExtReg::IF_MIX_CFG as usize + self.ext_values.len() - 1 == ExtReg::PA_CFG3 as usize
+        self.first == Reg::IOCFG3
+            && Reg::IOCFG3 as usize + self.values.len() - 1 == Reg::PKT_LEN as usize
+            && self.ext_first == ExtReg::IF_MIX_CFG
+            && ExtReg::IF_MIX_CFG as usize + self.ext_values.len() - 1 == ExtReg::PA_CFG3 as usize
     }
 
     pub fn is_patch(&self) -> bool {

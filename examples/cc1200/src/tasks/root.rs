@@ -2,7 +2,11 @@
 
 use crate::{consts, thr, thr::ThrsInit, Regs};
 use alloc::sync::Arc;
-use drone_cc1200_drv::{Cc1200Drv, Cc1200PartNumber, configs::CC1200_WMBUS_MODECMTO_FULL, controllers::{DebugController, InfiniteController}};
+use drone_cc1200_drv::{
+    configs::CC1200_WMBUS_MODECMTO_FULL,
+    controllers::{DebugController, InfiniteController},
+    Cc1200Drv, Cc1200PartNumber,
+};
 use drone_core::{log, sync::Mutex};
 use drone_cortexm::{
     drv::sys_tick::SysTick, periph_sys_tick, reg::prelude::*, swo, thr::prelude::*,
@@ -26,8 +30,8 @@ use drone_stm32f4_hal::{
     spi::{chipctrl::*, config::*, prelude::*, SpiDrv},
     tim::{prelude::*, GeneralTimCfg, GeneralTimSetup},
 };
-use drone_time::{Alarm, TimeSpan, UptimeDrv};
 use drone_time::AlarmDrv;
+use drone_time::{Alarm, TimeSpan, UptimeDrv};
 use futures::prelude::*;
 
 /// The root task handler.
@@ -174,7 +178,12 @@ pub fn handler(reg: Regs, thr_init: ThrsInit) {
 
     tim2.start(); // Also starts tim4
 
-    let uptime = UptimeDrv::new(tim2.counter.clone(), tim2.overflow, thr.tim_2, consts::Tim2Tick);
+    let uptime = UptimeDrv::new(
+        tim2.counter.clone(),
+        tim2.overflow,
+        thr.tim_2,
+        consts::Tim2Tick,
+    );
     let alarm = Arc::new(AlarmDrv::new(tim2.counter, tim2.ch1, consts::Tim2Tick));
 
     // Initialize CC1200
@@ -194,7 +203,13 @@ pub fn handler(reg: Regs, thr_init: ThrsInit) {
 
     cc1200.hw_reset(&mut chip).root_wait().unwrap_or_default();
 
-    assert_eq!(Cc1200PartNumber::Cc1200, cc1200.read_part_number(&mut spi, &mut chip).root_wait().unwrap());
+    assert_eq!(
+        Cc1200PartNumber::Cc1200,
+        cc1200
+            .read_part_number(&mut spi, &mut chip)
+            .root_wait()
+            .unwrap()
+    );
 
     let spi = Arc::new(Mutex::new(spi));
     // let mut debug = DebugController::setup(cc1200, spi.clone(), chip, &CC1200_WMBUS_MODECMTO_FULL).root_wait().unwrap();
@@ -208,12 +223,29 @@ pub fn handler(reg: Regs, thr_init: ThrsInit) {
     // debug.idle().root_wait();
 
     // let (cc1200, chip) = debug.release();
-    let mut infinite = InfiniteController::setup(cc1200, spi.clone(), chip, tim4.ch1, uptime, &CC1200_WMBUS_MODECMTO_FULL).root_wait().unwrap();
+    let mut infinite = InfiniteController::setup(
+        cc1200,
+        spi.clone(),
+        chip,
+        tim4.ch1,
+        uptime,
+        &CC1200_WMBUS_MODECMTO_FULL,
+    )
+    .root_wait()
+    .unwrap();
 
+    let mut count = 0;
     let mut rx_stream = infinite.rx_stream(1).root_wait();
     while let Some(whoot) = rx_stream.next().root_wait() {
         // println!("{:?}", whoot.upstamp);
+        count += 1;
+
+        if count == 100 {
+            break;
+        }
     }
+    drop(rx_stream);
+    infinite.release();
 
     // Enter a sleep state on ISR exit.
     reg.scb_scr.sleeponexit.set_bit();

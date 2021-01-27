@@ -111,7 +111,7 @@ pub fn handler(reg: Regs, thr_init: ThrsInit) {
     let spi_drv = SpiDrv::init(setup);
     let mut spi = spi_drv.init_master(miso_dma, mosi_dma);
 
-    let mut chip = SpiChip::as_deselected(pin_cs);
+    let mut chip = SpiChip::new_deselected(pin_cs);
     
     let systick = SysTickAlarmDrv::new(periph_sys_tick!(reg), thr.sys_tick);
     let alarm = Arc::new(AlarmDrv::new(systick.counter, systick.timer, SysTickTick));

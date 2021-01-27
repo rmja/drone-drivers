@@ -1,5 +1,3 @@
-cargo-features = ["resolver"]
-
 [package]
 name = "drone-at250x0-drv"
 version = "0.1.0"

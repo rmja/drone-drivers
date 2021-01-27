@@ -37,6 +37,10 @@ use futures::prelude::*;
 /// The root task handler.
 #[inline(never)]
 pub fn handler(reg: Regs, thr_init: ThrsInit) {
+    handle(reg, thr_init).root_wait();
+}
+
+async fn handle(reg: Regs, thr_init: ThrsInit) {
     let thr = thr::init(thr_init);
 
     thr.hard_fault.add_once(|| panic!("Hard Fault"));
@@ -60,11 +64,11 @@ pub fn handler(reg: Regs, thr_init: ThrsInit) {
     let pwr = Pwr::init(periph_pwr!(reg));
     let flash = Flash::init(periph_flash!(reg));
 
-    let hseclk = rcc.stabilize(consts::HSECLK).root_wait();
+    let hseclk = rcc.stabilize(consts::HSECLK).await;
     let pll = rcc
         .select(consts::PLLSRC_HSECLK, hseclk)
         .stabilize(consts::PLL)
-        .root_wait();
+        .await;
     let hclk = rcc.configure(consts::HCLK);
     let pclk1 = rcc.configure(consts::PCLK1);
     let pclk2 = rcc.configure(consts::PCLK2);
@@ -201,26 +205,26 @@ pub fn handler(reg: Regs, thr_init: ThrsInit) {
     };
     let mut cc1200 = Cc1200Drv::init(cc1200_port, alarm.clone());
 
-    cc1200.hw_reset(&mut chip).root_wait().unwrap_or_default();
+    cc1200.hw_reset(&mut chip).await.unwrap_or_default();
 
     assert_eq!(
         Cc1200PartNumber::Cc1200,
         cc1200
             .read_part_number(&mut spi, &mut chip)
-            .root_wait()
+            .await
             .unwrap()
     );
 
     let spi = Arc::new(Mutex::new(spi));
-    // let mut debug = DebugController::setup(cc1200, spi.clone(), chip, &CC1200_WMBUS_MODECMTO_FULL).root_wait().unwrap();
+    // let mut debug = DebugController::setup(cc1200, spi.clone(), chip, &CC1200_WMBUS_MODECMTO_FULL).await.unwrap();
 
-    // debug.tx_unmodulated().root_wait();
-    // alarm.sleep(TimeSpan::from_secs(3)).root_wait();
-    // debug.tx_modulated_01().root_wait();
-    // alarm.sleep(TimeSpan::from_secs(3)).root_wait();
-    // debug.tx_modulated_pn9().root_wait();
-    // alarm.sleep(TimeSpan::from_secs(3)).root_wait();
-    // debug.idle().root_wait();
+    // debug.tx_unmodulated().await;
+    // alarm.sleep(TimeSpan::from_secs(3)).await;
+    // debug.tx_modulated_01().await;
+    // alarm.sleep(TimeSpan::from_secs(3)).await;
+    // debug.tx_modulated_pn9().await;
+    // alarm.sleep(TimeSpan::from_secs(3)).await;
+    // debug.idle().await;
 
     // let (cc1200, chip) = debug.release();
     let mut infinite = InfiniteController::setup(
@@ -231,21 +235,26 @@ pub fn handler(reg: Regs, thr_init: ThrsInit) {
         uptime,
         &CC1200_WMBUS_MODECMTO_FULL,
     )
-    .root_wait()
+    .await
     .unwrap();
 
-    let mut count = 0;
-    let mut rx_stream = infinite.rx_stream(1).root_wait();
-    while let Some(whoot) = rx_stream.next().root_wait() {
-        // println!("{:?}", whoot.upstamp);
-        count += 1;
+    // let mut count = 0;
+    // let mut rx_stream = infinite.rx_stream(1).await;
+    // while let Some(whoot) = rx_stream.next().await {
+    //     // println!("{:?}", whoot.upstamp);
+    //     count += 1;
 
-        if count == 100 {
-            break;
-        }
-    }
-    drop(rx_stream);
-    infinite.release();
+    //     if count == 100 {
+    //         break;
+    //     }
+    // }
+    // drop(rx_stream);
+    // infinite.release();
+
+    let tx: Vec<u8> = (0..=255).collect();
+
+    infinite.write(&tx).await;
+    infinite.tx().await;
 
     // Enter a sleep state on ISR exit.
     reg.scb_scr.sleeponexit.set_bit();

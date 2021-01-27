@@ -10,14 +10,15 @@ use futures::future::{self, Either};
 
 pub struct Cc1200Drv<Port: Cc1200Port, Al: Alarm<T>, T: Tick, A> {
     port: RefCell<Port>,
-    alarm: Arc<Al>,
+    pub alarm: Arc<Al>,
     adapters: PhantomData<A>,
     status: Cell<StatusByte>,
     rssi_offset: Rssi,
     tick: PhantomData<T>,
 }
 
-const RX_FIFO_SIZE: usize = 128;
+pub const RX_FIFO_SIZE: usize = 128;
+pub const TX_FIFO_SIZE: usize = 128;
 
 #[derive(Debug)]
 pub struct TimeoutError;
@@ -58,10 +59,14 @@ impl<Port: Cc1200Port, Al: Alarm<T>, T: Tick, A> Cc1200Drv<Port, Al, T, A> {
         result
     }
 
+    /// Get the spi status returned by the last register read or strobe.
+    /// Writing registers does not update status.
     pub fn last_status(&self) -> StatusByte {
         self.status.get()
     }
 
+    /// Read the chip part number.
+    /// This action updates last_status.
     pub async fn read_part_number<Spi: Cc1200Spi<A>, Chip: Cc1200Chip<A>>(
         &self,
         spi: &mut Spi,
@@ -77,7 +82,8 @@ impl<Port: Cc1200Port, Al: Alarm<T>, T: Tick, A> Cc1200Drv<Port, Al, T, A> {
         }
     }
 
-    /// Write configuration values.
+    /// Write configuration values to chip.
+    /// This action _does not_ update last_status.
     pub async fn write_config<Spi: Cc1200Spi<A>, Chip: Cc1200Chip<A>>(
         &self,
         spi: &mut Spi,
@@ -95,6 +101,8 @@ impl<Port: Cc1200Port, Al: Alarm<T>, T: Tick, A> Cc1200Drv<Port, Al, T, A> {
         }
     }
 
+    /// Read a sequence of register values from chip.
+    /// This action updates last_status.
     pub async fn read_regs<Spi: Cc1200Spi<A>, Chip: Cc1200Chip<A>>(
         &self,
         spi: &mut Spi,
@@ -118,6 +126,8 @@ impl<Port: Cc1200Port, Al: Alarm<T>, T: Tick, A> Cc1200Drv<Port, Al, T, A> {
         chip.deselect();
     }
 
+    /// Read a sequence of extended register values from chip.
+    /// This action updates last_status.
     pub async fn read_ext_regs<Spi: Cc1200Spi<A>, Chip: Cc1200Chip<A>>(
         &self,
         spi: &mut Spi,
@@ -142,6 +152,7 @@ impl<Port: Cc1200Port, Al: Alarm<T>, T: Tick, A> Cc1200Drv<Port, Al, T, A> {
     }
 
     /// Write register values.
+    /// This action _does not_ update last_status.
     pub async fn write_regs<Spi: Cc1200Spi<A>, Chip: Cc1200Chip<A>>(
         &self,
         spi: &mut Spi,
@@ -165,6 +176,7 @@ impl<Port: Cc1200Port, Al: Alarm<T>, T: Tick, A> Cc1200Drv<Port, Al, T, A> {
     }
 
     /// Write extended register values.
+    /// This action _does not_ update last_status.
     pub async fn write_ext_regs<Spi: Cc1200Spi<A>, Chip: Cc1200Chip<A>>(
         &self,
         spi: &mut Spi,
@@ -189,6 +201,7 @@ impl<Port: Cc1200Port, Al: Alarm<T>, T: Tick, A> Cc1200Drv<Port, Al, T, A> {
     }
 
     /// Modify register values.
+    /// This action updates last_status.
     pub async fn modify_regs<Spi: Cc1200Spi<A>, Chip: Cc1200Chip<A>, F: FnOnce(&mut [u8])>(
         &self,
         spi: &mut Spi,
@@ -204,6 +217,7 @@ impl<Port: Cc1200Port, Al: Alarm<T>, T: Tick, A> Cc1200Drv<Port, Al, T, A> {
     }
 
     /// Modify extended register values.
+    /// This action updates last_status.
     pub async fn modify_ext_regs<Spi: Cc1200Spi<A>, Chip: Cc1200Chip<A>, F: FnOnce(&mut [u8])>(
         &self,
         spi: &mut Spi,
@@ -218,6 +232,8 @@ impl<Port: Cc1200Port, Al: Alarm<T>, T: Tick, A> Cc1200Drv<Port, Al, T, A> {
         self.write_ext_regs(spi, chip, first, &buf).await;
     }
 
+    /// Read the current RSSI level.
+    /// This action updates last_status.
     pub async fn read_rssi<Spi: Cc1200Spi<A>, Chip: Cc1200Chip<A>>(
         &self,
         spi: &mut Spi,
@@ -243,6 +259,8 @@ impl<Port: Cc1200Port, Al: Alarm<T>, T: Tick, A> Cc1200Drv<Port, Al, T, A> {
         }
     }
 
+    /// Read from the RX fifo.
+    /// This action updates last_status.
     pub async fn read_fifo<Spi: Cc1200Spi<A>, Chip: Cc1200Chip<A>>(
         &self,
         spi: &mut Spi,
@@ -274,6 +292,8 @@ impl<Port: Cc1200Port, Al: Alarm<T>, T: Tick, A> Cc1200Drv<Port, Al, T, A> {
         buf.copy_from_slice(&rx_buf[1..len]);
     }
 
+    /// Read the RSSI and RX fifo in one transaction.
+    /// This action updates last_status.
     pub async fn read_rssi_and_fifo<Spi: Cc1200Spi<A>, Chip: Cc1200Chip<A>>(
         &self,
         spi: &mut Spi,
@@ -311,6 +331,23 @@ impl<Port: Cc1200Port, Al: Alarm<T>, T: Tick, A> Cc1200Drv<Port, Al, T, A> {
         Rssi(rssi + self.rssi_offset.0)
     }
 
+    /// Write to the TX fifo.
+    /// This action updates last_status.
+    pub async fn write_fifo<Spi: Cc1200Spi<A>, Chip: Cc1200Chip<A>>(
+        &self,
+        spi: &mut Spi,
+        chip: &mut Chip,
+        buf: &[u8],
+    ) {
+        let mut rx_buf: [u8; 1] = [0; 1];
+
+        chip.select();
+        spi.xfer(&[Opcode::WriteFifoBurst.val()], &mut rx_buf).await;
+        self.status.set(StatusByte(rx_buf[0]));
+        spi.write(buf).await;
+        chip.deselect();
+    }
+
     /// Wait for the xtal to stabilize.
     async fn wait_for_xtal(&self, port: &mut Port) -> Result<(), TimeoutError> {
         let rising = port.miso_wait_low();
@@ -323,6 +360,8 @@ impl<Port: Cc1200Port, Al: Alarm<T>, T: Tick, A> Cc1200Drv<Port, Al, T, A> {
         }
     }
 
+    /// Strobe a command to the chip.
+    /// This action updates last_status.
     pub async fn strobe<Spi: Cc1200Spi<A>, Chip: Cc1200Chip<A>>(
         &self,
         spi: &mut Spi,
@@ -345,6 +384,8 @@ impl<Port: Cc1200Port, Al: Alarm<T>, T: Tick, A> Cc1200Drv<Port, Al, T, A> {
         chip.deselect();
     }
 
+    /// Strobe a command to the chip, and continue to do so until `pred` is satisfied.
+    /// This action updates last_status.
     pub async fn strobe_until<Spi: Cc1200Spi<A>, Chip: Cc1200Chip<A>, Pred>(
         &self,
         spi: &mut Spi,
@@ -370,6 +411,8 @@ impl<Port: Cc1200Port, Al: Alarm<T>, T: Tick, A> Cc1200Drv<Port, Al, T, A> {
         chip.deselect();
     }
 
+    /// Strobe a command to the chip, and continue to do so until the chip enters the IDLE state.
+    /// This action updates last_status.
     pub async fn strobe_until_idle<Spi: Cc1200Spi<A>, Chip: Cc1200Chip<A>>(
         &self,
         spi: &mut Spi,

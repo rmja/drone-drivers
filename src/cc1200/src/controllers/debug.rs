@@ -1,10 +1,9 @@
 use alloc::sync::Arc;
 use drone_core::sync::Mutex;
 use drone_time::{Alarm, Tick};
-use futures::Future;
 
 use crate::{
-    config::Cc1200Gpio,
+    Cc1200Gpio,
     opcode::{ExtReg, Reg, Strobe},
     regs::{Mdmcfg0, Mdmcfg1, Mdmcfg2, PktCfg2},
     Cc1200Chip, Cc1200Config, Cc1200Drv, Cc1200Port, Cc1200Spi, State, TimeoutError,

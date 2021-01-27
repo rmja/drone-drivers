@@ -8,6 +8,7 @@ pub struct Cc1200Config<'a> {
 }
 
 impl Cc1200Config<'_> {
+    /// Get whether the configuration contains values for all registers.
     pub fn is_full(&self) -> bool {
         self.first == Reg::IOCFG3
             && Reg::IOCFG3 as usize + self.values.len() - 1 == Reg::PKT_LEN as usize
@@ -15,24 +16,15 @@ impl Cc1200Config<'_> {
             && ExtReg::IF_MIX_CFG as usize + self.ext_values.len() - 1 == ExtReg::PA_CFG3 as usize
     }
 
-    pub fn is_patch(&self) -> bool {
-        !self.is_full()
-    }
-
+    /// Get a register value, or None if the register is not part of the configuration.
     pub fn reg(&self, reg: Reg) -> Option<u8> {
         let index = reg as usize - self.first as usize;
         self.values.get(index).map(|v| *v)
     }
 
+    /// Get an extended register value, or None if the register is not part of the configuration.
     pub fn ext_reg(&self, reg: ExtReg) -> Option<u8> {
         let index = reg as usize - self.ext_first as usize;
         self.ext_values.get(index).map(|v| *v)
     }
-}
-
-pub enum Cc1200Gpio {
-    Gpio0,
-    Gpio1,
-    Gpio2,
-    Gpio3,
 }

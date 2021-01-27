@@ -5,7 +5,7 @@ use alloc::sync::Arc;
 use drone_cc1200_drv::{
     configs::CC1200_WMBUS_MODECMTO_FULL,
     controllers::{DebugController, InfiniteController},
-    Cc1200Drv, Cc1200PartNumber,
+    Cc1200Drv, Cc1200Gpio, Cc1200PartNumber,
 };
 use drone_core::{log, sync::Mutex};
 use drone_cortexm::{
@@ -30,7 +30,7 @@ use drone_stm32f4_hal::{
     spi::{chipctrl::*, config::*, prelude::*, SpiDrv},
     tim::{prelude::*, GeneralTimCfg, GeneralTimSetup},
 };
-use drone_time::AlarmDrv;
+use drone_time::{AlarmDrv, Uptime};
 use drone_time::{Alarm, TimeSpan, UptimeDrv};
 use futures::prelude::*;
 
@@ -95,7 +95,7 @@ async fn handle(reg: Regs, thr_init: ThrsInit) {
         .pin(periph_gpio_a6!(reg))
         .into_alternate()
         .into_pushpull()
-        .into_nopull()
+        .into_pulldown()
         .with_speed(GpioPinSpeed::MediumSpeed);
     let mosi_pin = gpio_a
         .pin(periph_gpio_a7!(reg))
@@ -209,10 +209,7 @@ async fn handle(reg: Regs, thr_init: ThrsInit) {
 
     assert_eq!(
         Cc1200PartNumber::Cc1200,
-        cc1200
-            .read_part_number(&mut spi, &mut chip)
-            .await
-            .unwrap()
+        cc1200.read_part_number(&mut spi, &mut chip).await.unwrap()
     );
 
     let spi = Arc::new(Mutex::new(spi));
@@ -232,15 +229,16 @@ async fn handle(reg: Regs, thr_init: ThrsInit) {
         spi.clone(),
         chip,
         tim4.ch1,
-        uptime,
+        uptime.clone(),
         &CC1200_WMBUS_MODECMTO_FULL,
+        Cc1200Gpio::Gpio0,
     )
     .await
     .unwrap();
 
     // let mut count = 0;
     // let mut rx_stream = infinite.rx_stream(1).await;
-    // while let Some(whoot) = rx_stream.next().await {
+    // while let Some(whoot) = receive_stream.next().await {
     //     // println!("{:?}", whoot.upstamp);
     //     count += 1;
 
@@ -254,7 +252,13 @@ async fn handle(reg: Regs, thr_init: ThrsInit) {
     let tx: Vec<u8> = (0..=255).collect();
 
     infinite.write(&tx).await;
-    infinite.tx().await;
+
+    let before = uptime.now();
+    infinite.transmit_packet().await.unwrap();
+    let after = uptime.now();
+
+    let tx_us = (after - before).as_micros();
+    println!("Tx strobe + actual transmission took {}us", tx_us);
 
     // Enter a sleep state on ISR exit.
     reg.scb_scr.sleeponexit.set_bit();

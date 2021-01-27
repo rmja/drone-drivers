@@ -1,16 +1,7 @@
 use crate::{Cc1200Chip, Cc1200Spi, Cc1200Timer, Cc1200TimerPin};
 use alloc::sync::Arc;
 use async_trait::async_trait;
-use drone_stm32f4_hal::{
-    dma::DmaChMap,
-    gpio::{AlternateMode, GpioPin, GpioPinMap, PinAf},
-    spi::{chipctrl::SpiChip, SpiMap, SpiMasterDrv},
-    tim::{
-        CaptureStop, CaptureStream, GeneralTimCh, GeneralTimChDrv, GeneralTimMap, InputCaptureMode,
-        InputSelection, TimerCaptureCh, TimerPinCaptureCh,
-    },
-    IntToken,
-};
+use drone_stm32f4_hal::{IntToken, dma::DmaChMap, gpio::{AlternateMode, GpioPin, GpioPinMap, PinAf}, spi::{chipctrl::SpiChip, SpiMap, SpiMasterDrv}, tim::{GeneralTimCh, GeneralTimChDrv, GeneralTimMap, InputCaptureMode, InputSelection, TimerCaptureCh, TimerCapturePolarity, TimerPinCaptureCh}};
 use futures::Stream;
 
 pub struct Adapter;
@@ -64,11 +55,19 @@ impl<
     }
 
     #[inline]
-    fn capture_overwriting_stream<'a>(
+    fn rising_edge_capture_overwriting_stream<'a>(
         &'a mut self,
         capacity: usize,
     ) -> core::pin::Pin<Box<dyn Stream<Item = u32> + 'a>> {
-        Box::pin(TimerCaptureCh::overwriting_stream(self, capacity))
+        Box::pin(TimerCaptureCh::overwriting_stream(self, capacity, TimerCapturePolarity::RisingEdge))
+    }
+
+    #[inline]
+    fn falling_edge_capture_overwriting_stream<'a>(
+        &'a mut self,
+        capacity: usize,
+    ) -> core::pin::Pin<Box<dyn Stream<Item = u32> + 'a>> {
+        Box::pin(TimerCaptureCh::overwriting_stream(self, capacity, TimerCapturePolarity::FallingEdge))
     }
 }
 

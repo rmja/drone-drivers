@@ -29,7 +29,7 @@ pub(crate) mod cc1200 {
             MisoPin,
             AlternateMode<MisoAf>,
             PushPullType,
-            NoPull,
+            PullDown, // The miso pin should be pull'ed accourding to the cc1200 IOCFG1 description.
             FallingEdge,
         >,
     }
@@ -55,10 +55,4 @@ pub(crate) mod cc1200 {
             self.miso_exti_line.wait_low().await;
         }
     }
-
-    // #[async_trait]
-    // impl<Tim: GeneralTimMap, Int: ThrToken, Ch> Cc1200Timer<Adapters> for Alarm<Tim, Int, Ch, OutputCompareMode> {
-    //     async fn sleep_ms(&mut self, ms: u32) {
-    //     }
-    // }
 }

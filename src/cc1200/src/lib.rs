@@ -13,16 +13,17 @@ mod drv;
 mod opcode;
 mod regs;
 mod statusbyte;
+mod gpio;
 
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub enum Cc1200PartNumber {
     Cc1200,
     Cc1201,
 }
-
 pub struct Rssi(pub i8);
 
 pub use self::{
+    gpio::Cc1200Gpio,
     adapters::{
         chip::Cc1200Chip,
         port::Cc1200Port,

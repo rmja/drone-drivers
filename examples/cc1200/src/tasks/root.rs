@@ -30,9 +30,7 @@ use drone_stm32f4_hal::{
     spi::{chipctrl::*, config::*, prelude::*, SpiDrv},
     tim::{prelude::*, GeneralTimCfg, GeneralTimSetup},
 };
-use drone_time::{AlarmDrv, Uptime};
-use drone_time::{Alarm, TimeSpan, UptimeDrv};
-use futures::prelude::*;
+use drone_time::{prelude::*, AlarmDrv, UptimeDrv};
 
 /// The root task handler.
 #[inline(never)]

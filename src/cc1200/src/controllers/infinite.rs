@@ -3,9 +3,9 @@ use core::{cell::RefCell, cmp::min, pin::Pin};
 use alloc::sync::Arc;
 use drone_core::sync::Mutex;
 use drone_time::{Alarm, Tick, TimeSpan};
-use futures::{future::{Either, select}, prelude::*};
+use futures::prelude::*;
 
-use crate::{Cc1200Chip, Cc1200Config, Cc1200Drv, Cc1200Gpio, Cc1200Port, Cc1200Spi, Cc1200Timer, Cc1200Uptime, Rssi, State, TimeoutError, drv::TX_FIFO_SIZE, opcode::{Reg, Strobe}, regs::{FifoCfg, Mdmcfg0, Mdmcfg1, PktCfg0, PktCfg2, RfendCfg0, RfendCfg1}};
+use crate::{Cc1200Chip, Cc1200Config, Cc1200Drv, Cc1200Gpio, Cc1200Port, Cc1200Spi, Cc1200Timer, Cc1200Uptime, Rssi, State, TimeoutError, drv::TX_FIFO_SIZE, opcode::{Reg, Strobe}, regs::{FifoCfg, Mdmcfg1, PktCfg0, PktCfg2, RfendCfg0, RfendCfg1}};
 
 /// Asserted when the RX FIFO is filled above FIFO_CFG.FIFO_THR. De-asserted
 /// when the RX FIFO is drained below (or is equal) to the same threshold.
@@ -71,10 +71,11 @@ impl<
         fifo_gpio: Cc1200Gpio,
     ) -> Result<Self, TimeoutError> {
         assert!(config.is_full());
+        Self::assert_compatible_config(config);
 
         driver.hw_reset(&mut chip).await?;
 
-        let this = Self {
+        let mut this = Self {
             driver: Arc::new(driver),
             spi,
             chip: Arc::new(RefCell::new(chip)),
@@ -86,33 +87,39 @@ impl<
             write_queue: Vec::new(),
         };
 
-        this.write_config().await;
+        this.write_config(config).await;
 
         Ok(this)
     }
 
-    async fn write_config(&self) {
+    /// Ensure that a config is compatible with the controller operation.
+    fn assert_compatible_config<'a>(config: &Cc1200Config<'a>) {
+        if let Some(val) = config.reg(Reg::MDMCFG1) {
+            assert_eq!(val, Mdmcfg1(val).set_fifo_en().0); // FIFO must be enabled.
+        }
+
+        if let Some(val) = config.reg(Reg::PKT_CFG2) {
+            assert_eq!(val, PktCfg2(val).write_pkt_format(0b00).0); // Packet mode must be Normal/FIFO mode.
+        }
+
+        if let Some(val) = config.reg(Reg::RFEND_CFG1) {
+            assert_eq!(val, RfendCfg1(val).write_rxoff_mode(0b11).0); // Must re-enter RX when RX ends.
+        }
+
+        if let Some(val) = config.reg(Reg::RFEND_CFG0) {
+            assert_eq!(val, RfendCfg0(val).write_txoff_mode(0b11).0); // Must enter IDLE after TX ends.
+        }
+    }
+
+    /// Patch the currently assigned configuration.
+    pub async fn write_config<'a>(&mut self, config: &Cc1200Config<'a>) {
+        Self::assert_compatible_config(config);
+
         let mut spi = self.spi.try_lock().unwrap();
         let mut chip = self.chip.borrow_mut();
 
-        // Write the full configuration.
-        self.driver.write_config(&mut *spi, &mut *chip, self.config).await;
-
-        // Write controller operational registers.
-        self.driver.write_regs(&mut *spi, &mut *chip, Reg::MDMCFG1, &[
-            Mdmcfg1(self.config.reg(Reg::MDMCFG1).unwrap()).set_fifo_en().0, // Enable FIFO.
-        ]).await;
-
-        self.driver.write_regs(&mut *spi, &mut *chip, Reg::PKT_CFG2, &[
-            PktCfg2(self.config.reg(Reg::PKT_CFG2).unwrap()).write_pkt_format(0b00).0, // Normal/FIFO mode.
-            self.config.reg(Reg::PKT_CFG1).unwrap(),
-            PktCfg0(self.config.reg(Reg::PKT_CFG0).unwrap()).write_length_config(0b10).0, // Infinite packet length mode.
-        ]).await;
-
-        self.driver.write_regs(&mut *spi, &mut *chip, Reg::RFEND_CFG1, &[
-            RfendCfg1(self.config.reg(Reg::RFEND_CFG1).unwrap()).write_rxoff_mode(0b11).0, // Re-enter RX when RX ends.
-            RfendCfg0(self.config.reg(Reg::RFEND_CFG0).unwrap()).write_txoff_mode(0b00).0, // Enter IDLE after TX ends.
-        ]).await;
+        // Patch the configuration.
+        self.driver.write_config(&mut *spi, &mut *chip, config).await;
     }
 
     /// Transition chip to idle state.

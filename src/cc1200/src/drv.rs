@@ -11,10 +11,10 @@ use futures::future::{self, Either};
 pub struct Cc1200Drv<Port: Cc1200Port, Al: Alarm<T>, T: Tick, A> {
     port: RefCell<Port>,
     pub alarm: Arc<Al>,
-    adapters: PhantomData<A>,
     status: Cell<StatusByte>,
     rssi_offset: Rssi,
     tick: PhantomData<T>,
+    adapter: PhantomData<A>,
 }
 
 pub const RX_FIFO_SIZE: usize = 128;
@@ -36,10 +36,10 @@ impl<Port: Cc1200Port, Al: Alarm<T>, T: Tick, A> Cc1200Drv<Port, Al, T, A> {
         Self {
             port: RefCell::new(port),
             alarm,
-            adapters: PhantomData,
             status: Cell::new(StatusByte(0)),
             rssi_offset: Rssi(0),
             tick: PhantomData,
+            adapter: PhantomData,
         }
     }
 

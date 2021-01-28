@@ -18,10 +18,10 @@ use drone_stm32_map::periph::{
 use drone_stm32f4_hal::{
     dma::{config::*, DmaCfg},
     gpio::{prelude::*, GpioHead},
-    rcc::{periph_flash, periph_pwr, periph_rcc, traits::*, Flash, Pwr, Rcc, RccSetup},
-    spi::{chipctrl::*, config::*, prelude::*, SpiDrv},
+    rcc::{prelude::*, periph_flash, periph_pwr, periph_rcc, Flash, Pwr, Rcc, RccSetup},
+    spi::{prelude::*, chipctrl::*, SpiDrv, SpiSetup, SpiPins},
 };
-use drone_time::{AlarmDrv,drivers::SysTickAlarmDrv};
+use drone_time::{AlarmDrv, drivers::SysTickAlarmDrv};
 
 /// The root task handler.
 #[inline(never)]
@@ -40,8 +40,8 @@ pub fn handler(reg: Regs, thr_init: ThrsInit) {
 
     // Initialize clocks.
     let rcc = Rcc::init(RccSetup::new(periph_rcc!(reg), thr.rcc));
-    let pwr = Pwr::init(periph_pwr!(reg));
-    let flash = Flash::init(periph_flash!(reg));
+    let pwr = Pwr::with_enabled_clock(periph_pwr!(reg));
+    let flash = Flash::new(periph_flash!(reg));
 
     let hseclk = rcc.stabilize(consts::HSECLK).root_wait();
     let pll = rcc
@@ -108,8 +108,7 @@ pub fn handler(reg: Regs, thr_init: ThrsInit) {
         pclk2,
         BaudRate::Max(5_000_000),
     );
-    let spi_drv = SpiDrv::init(setup);
-    let mut spi = spi_drv.init_master(miso_dma, mosi_dma);
+    let mut spi = SpiDrv::init(setup).into_master(miso_dma, mosi_dma);
 
     let mut chip = SpiChip::new_deselected(pin_cs);
     

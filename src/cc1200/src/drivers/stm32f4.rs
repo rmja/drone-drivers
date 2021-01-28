@@ -20,7 +20,7 @@ impl<Pin: GpioPinMap, PinType, PinPull> Cc1200Chip<Adapter> for SpiChip<Pin, Pin
 
 #[async_trait]
 impl<Spi: SpiMap, DmaRx: DmaChMap, DmaRxInt: IntToken, DmaTx: DmaChMap, DmaTxInt: IntToken>
-    Cc1200Spi<Adapter> for SpiMasterDrv<'_, Spi, DmaRx, DmaRxInt, DmaTx, DmaTxInt>
+    Cc1200Spi<Adapter> for SpiMasterDrv<Spi, DmaRx, DmaRxInt, DmaTx, DmaTxInt>
 {
     #[inline]
     async fn read(&mut self, rx: &mut [u8]) {

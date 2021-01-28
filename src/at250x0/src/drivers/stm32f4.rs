@@ -23,7 +23,7 @@ impl<Pin: GpioPinMap, PinType, PinPull> At250x0Chip<Adapter>
             DmaRxInt: IntToken,
             DmaTx: DmaChMap,
             DmaTxInt: IntToken,
-        > At250x0Spi<Adapter> for SpiMasterDrv<'_, Spi, DmaRx, DmaRxInt, DmaTx, DmaTxInt>
+        > At250x0Spi<Adapter> for SpiMasterDrv<Spi, DmaRx, DmaRxInt, DmaTx, DmaTxInt>
     {
         async fn read(&mut self, rx: &mut [u8]) {
             self.read(rx).await;

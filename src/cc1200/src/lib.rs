@@ -34,6 +34,7 @@ pub use self::{
     config::Cc1200Config,
     drv::{Cc1200Drv, TimeoutError},
     statusbyte::{State, StatusByte},
+    opcode::Strobe,
 };
 
 #[prelude_import]

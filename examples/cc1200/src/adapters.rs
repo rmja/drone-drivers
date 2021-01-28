@@ -1,29 +1,23 @@
+pub struct Adapter;
+
 pub(crate) mod cc1200 {
     use async_trait::async_trait;
     use drone_cc1200_drv::Cc1200Port;
     use drone_cortexm::thr::prelude::*;
-    use drone_stm32_map::periph::{
-        exti::{ExtiFtsrFt, ExtiMap, ExtiPrPif, ExtiRtsrRt, ExtiSwierSwi, SyscfgExticrExti},
-        gpio::pin::GpioPinMap,
-    };
     use drone_stm32f4_hal::{
-        exti::{prelude::*, ExtiLine},
-        gpio::{prelude::*, GpioPin},
+        exti::{prelude::*, ExtiLine, ExtiMap},
+        gpio::{prelude::*, GpioPin, GpioPinMap},
     };
-
-    pub struct Adapters;
 
     pub struct Port<
-        'a,
         ResetPin: GpioPinMap,
         MisoPin: GpioPinMap,
         MisoAf: PinAf,
-        MisoExti: ExtiMap + SyscfgExticrExti + ExtiRtsrRt + ExtiFtsrFt + ExtiSwierSwi + ExtiPrPif,
+        MisoExti: ExtiMap,
         MisoExtiInt: IntToken,
     > {
         pub reset_pin: GpioPin<ResetPin, OutputMode, PushPullType, PullUp>,
         pub miso_exti_line: ExtiLine<
-            'a,
             MisoExti,
             MisoExtiInt,
             MisoPin,
@@ -39,9 +33,9 @@ pub(crate) mod cc1200 {
             ResetPin: GpioPinMap,
             MisoPin: GpioPinMap,
             MisoAf: PinAf,
-            MisoExti: ExtiMap + SyscfgExticrExti + ExtiRtsrRt + ExtiFtsrFt + ExtiSwierSwi + ExtiPrPif,
+            MisoExti: ExtiMap,
             MisoExtiInt: IntToken,
-        > Cc1200Port for Port<'_, ResetPin, MisoPin, MisoAf, MisoExti, MisoExtiInt>
+        > Cc1200Port for Port<ResetPin, MisoPin, MisoAf, MisoExti, MisoExtiInt>
     {
         fn set_reset(&mut self) {
             self.reset_pin.set();

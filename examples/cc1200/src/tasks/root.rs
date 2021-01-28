@@ -1,6 +1,6 @@
 //! The root task.
 
-use crate::{consts, thr, thr::ThrsInit, Regs};
+use crate::{consts, thr, thr::ThrsInit, Regs, tasks};
 use alloc::sync::Arc;
 use drone_cc1200_drv::{
     configs::CC1200_WMBUS_MODECMTO_FULL,
@@ -26,11 +26,11 @@ use drone_stm32f4_hal::{
     dma::{config::*, DmaCfg},
     exti::{periph_syscfg, prelude::*, ExtiDrv, Syscfg},
     gpio::{prelude::*, GpioHead},
-    rcc::{periph_flash, periph_pwr, periph_rcc, traits::*, Flash, Pwr, Rcc, RccSetup},
-    spi::{chipctrl::*, config::*, prelude::*, SpiDrv},
+    rcc::{prelude::*, periph_flash, periph_pwr, periph_rcc, Flash, Pwr, Rcc, RccSetup},
+    spi::{chipctrl::*, prelude::*, SpiDrv, SpiPins, SpiSetup},
     tim::{prelude::*, GeneralTimCfg, GeneralTimSetup},
 };
-use drone_time::{prelude::*, AlarmDrv, UptimeDrv};
+use drone_time::{AlarmDrv, UptimeDrv};
 
 /// The root task handler.
 #[inline(never)]
@@ -54,13 +54,12 @@ async fn handle(reg: Regs, thr_init: ThrsInit) {
     thr.dma_2_ch_2.enable_int();
     thr.dma_2_ch_3.enable_int();
 
-    thr.tim_4.set_priority(10);
-    thr.spi_1.set_priority(9);
+    thr.rf.enable_int();
 
     // Initialize clocks.
     let rcc = Rcc::init(RccSetup::new(periph_rcc!(reg), thr.rcc));
-    let pwr = Pwr::init(periph_pwr!(reg));
-    let flash = Flash::init(periph_flash!(reg));
+    let pwr = Pwr::with_enabled_clock(periph_pwr!(reg));
+    let flash = Flash::new(periph_flash!(reg));
 
     let hseclk = rcc.stabilize(consts::HSECLK).await;
     let pll = rcc
@@ -112,7 +111,7 @@ async fn handle(reg: Regs, thr_init: ThrsInit) {
 
     // Initialize exti.
     let syscfg = Syscfg::with_enabled_clock(periph_syscfg!(reg));
-    let exti6 = ExtiDrv::new(periph_exti6!(reg), thr.exti_9_5, &syscfg).into_falling_edge();
+    let exti6 = Arc::new(ExtiDrv::new(periph_exti6!(reg), thr.exti_9_5, &syscfg).into_falling_edge());
 
     // Initialize dma.
     let dma2 = DmaCfg::with_enabled_clock(periph_dma2!(reg));
@@ -131,8 +130,7 @@ async fn handle(reg: Regs, thr_init: ThrsInit) {
         pclk2,
         BaudRate::Max(7_700_000),
     );
-    let spi_drv = SpiDrv::init(setup);
-    let mut spi = spi_drv.init_master(miso_dma, mosi_dma);
+    let mut spi = SpiDrv::init(setup).into_master(miso_dma, mosi_dma);
 
     let mut chip = SpiChip::new_deselected(cs_pin);
 
@@ -188,6 +186,8 @@ async fn handle(reg: Regs, thr_init: ThrsInit) {
     );
     let alarm = Arc::new(AlarmDrv::new(tim2.counter, tim2.ch1, consts::Tim2Tick));
 
+    let spi = Arc::new(Mutex::new(spi));
+
     // Initialize CC1200
     // LA Colors:
     // 0. MISO: Grey
@@ -197,20 +197,13 @@ async fn handle(reg: Regs, thr_init: ThrsInit) {
     // 5. DATA_RDY: Green
     // 6. MOSI: Blue
     // 7. RESET: Purple
-    let cc1200_port = crate::adapters::cc1200::Port {
+    let port = crate::adapters::cc1200::Port {
         reset_pin,
         miso_exti_line: exti6.line(miso_pin_reset),
     };
-    let mut cc1200 = Cc1200Drv::init(cc1200_port, alarm.clone());
+    thr.rf.exec(tasks::rf(port, alarm.clone(), spi.clone(), chip));
+    // let mut cc1200 = Cc1200Drv::init(port, alarm.clone());
 
-    cc1200.hw_reset(&mut chip).await.unwrap_or_default();
-
-    assert_eq!(
-        Cc1200PartNumber::Cc1200,
-        cc1200.read_part_number(&mut spi, &mut chip).await.unwrap()
-    );
-
-    let spi = Arc::new(Mutex::new(spi));
     // let mut debug = DebugController::setup(cc1200, spi.clone(), chip, &CC1200_WMBUS_MODECMTO_FULL).await.unwrap();
 
     // debug.tx_unmodulated().await;
@@ -222,17 +215,21 @@ async fn handle(reg: Regs, thr_init: ThrsInit) {
     // debug.idle().await;
 
     // let (cc1200, chip) = debug.release();
-    let mut infinite = InfiniteController::setup(
-        cc1200,
-        spi.clone(),
-        chip,
-        tim4.ch1,
-        uptime.clone(),
-        &CC1200_WMBUS_MODECMTO_FULL,
-        Cc1200Gpio::Gpio0,
-    )
-    .await
-    .unwrap();
+    // let mut infinite = InfiniteController::setup(
+    //     cc1200,
+    //     spi.clone(),
+    //     chip,
+    //     tim4.ch1,
+    //     uptime.clone(),
+    //     &CC1200_WMBUS_MODECMTO_FULL,
+    //     Cc1200Gpio::Gpio0,
+    // )
+    // .await
+    // .unwrap();
+
+    // let ctrl = Arc::new(Mutex::new(infinite));
+
+    
 
     // let mut count = 0;
     // let mut rx_stream = infinite.rx_stream(1).await;
@@ -247,16 +244,16 @@ async fn handle(reg: Regs, thr_init: ThrsInit) {
     // drop(rx_stream);
     // infinite.release();
 
-    let tx: Vec<u8> = (0..=255).collect();
+    // let tx: Vec<u8> = (0..=255).collect();
 
-    infinite.write(&tx).await;
+    // infinite.write(&tx).await;
 
-    let before = uptime.now();
-    infinite.transmit_packet().await.unwrap();
-    let after = uptime.now();
+    // let before = uptime.now();
+    // infinite.transmit_packet().await.unwrap();
+    // let after = uptime.now();
 
-    let tx_us = (after - before).as_micros();
-    println!("Tx strobe + actual transmission took {}us", tx_us);
+    // let tx_us = (after - before).as_micros();
+    // println!("Tx strobe + actual transmission took {}us", tx_us);
 
     // Enter a sleep state on ISR exit.
     reg.scb_scr.sleeponexit.set_bit();

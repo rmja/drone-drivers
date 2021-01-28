@@ -3,6 +3,7 @@ use crate::{
     Cc1200Chip, Cc1200Config, Cc1200PartNumber, Cc1200Port, Cc1200Spi, Rssi, State, StatusByte,
 };
 use alloc::sync::Arc;
+use drone_core::sync::Mutex;
 use core::cell::{Cell, RefCell};
 use core::marker::PhantomData;
 use drone_time::{Alarm, Tick, TimeSpan};
@@ -66,7 +67,7 @@ impl<Port: Cc1200Port, Al: Alarm<T>, T: Tick, A> Cc1200Drv<Port, Al, T, A> {
     }
 
     /// Read the chip part number.
-    /// This action updates last_status.
+    /// This action _does_ update `last_status`.
     pub async fn read_part_number<Spi: Cc1200Spi<A>, Chip: Cc1200Chip<A>>(
         &self,
         spi: &mut Spi,
@@ -83,7 +84,7 @@ impl<Port: Cc1200Port, Al: Alarm<T>, T: Tick, A> Cc1200Drv<Port, Al, T, A> {
     }
 
     /// Write configuration values to chip.
-    /// This action _does not_ update last_status.
+    /// This action _does not_ update `last_status`.
     pub async fn write_config<Spi: Cc1200Spi<A>, Chip: Cc1200Chip<A>>(
         &self,
         spi: &mut Spi,
@@ -102,7 +103,7 @@ impl<Port: Cc1200Port, Al: Alarm<T>, T: Tick, A> Cc1200Drv<Port, Al, T, A> {
     }
 
     /// Read a sequence of register values from chip.
-    /// This action updates last_status.
+    /// This action _does_ update `last_status`.
     pub async fn read_regs<Spi: Cc1200Spi<A>, Chip: Cc1200Chip<A>>(
         &self,
         spi: &mut Spi,
@@ -127,7 +128,7 @@ impl<Port: Cc1200Port, Al: Alarm<T>, T: Tick, A> Cc1200Drv<Port, Al, T, A> {
     }
 
     /// Read a sequence of extended register values from chip.
-    /// This action updates last_status.
+    /// This action _does_ update `last_status`.
     pub async fn read_ext_regs<Spi: Cc1200Spi<A>, Chip: Cc1200Chip<A>>(
         &self,
         spi: &mut Spi,
@@ -152,7 +153,7 @@ impl<Port: Cc1200Port, Al: Alarm<T>, T: Tick, A> Cc1200Drv<Port, Al, T, A> {
     }
 
     /// Write register values.
-    /// This action _does not_ update last_status.
+    /// This action _does not_ update `last_status`.
     pub async fn write_regs<Spi: Cc1200Spi<A>, Chip: Cc1200Chip<A>>(
         &self,
         spi: &mut Spi,
@@ -176,7 +177,7 @@ impl<Port: Cc1200Port, Al: Alarm<T>, T: Tick, A> Cc1200Drv<Port, Al, T, A> {
     }
 
     /// Write extended register values.
-    /// This action _does not_ update last_status.
+    /// This action _does not_ update `last_status`.
     pub async fn write_ext_regs<Spi: Cc1200Spi<A>, Chip: Cc1200Chip<A>>(
         &self,
         spi: &mut Spi,
@@ -201,7 +202,7 @@ impl<Port: Cc1200Port, Al: Alarm<T>, T: Tick, A> Cc1200Drv<Port, Al, T, A> {
     }
 
     /// Modify register values.
-    /// This action updates last_status.
+    /// This action _does_ update `last_status`.
     pub async fn modify_regs<Spi: Cc1200Spi<A>, Chip: Cc1200Chip<A>, F: FnOnce(&mut [u8])>(
         &self,
         spi: &mut Spi,
@@ -217,7 +218,7 @@ impl<Port: Cc1200Port, Al: Alarm<T>, T: Tick, A> Cc1200Drv<Port, Al, T, A> {
     }
 
     /// Modify extended register values.
-    /// This action updates last_status.
+    /// This action _does_ update `last_status`.
     pub async fn modify_ext_regs<Spi: Cc1200Spi<A>, Chip: Cc1200Chip<A>, F: FnOnce(&mut [u8])>(
         &self,
         spi: &mut Spi,
@@ -233,7 +234,7 @@ impl<Port: Cc1200Port, Al: Alarm<T>, T: Tick, A> Cc1200Drv<Port, Al, T, A> {
     }
 
     /// Read the current RSSI level.
-    /// This action updates last_status.
+    /// This action _does_ update `last_status`.
     pub async fn read_rssi<Spi: Cc1200Spi<A>, Chip: Cc1200Chip<A>>(
         &self,
         spi: &mut Spi,
@@ -260,7 +261,7 @@ impl<Port: Cc1200Port, Al: Alarm<T>, T: Tick, A> Cc1200Drv<Port, Al, T, A> {
     }
 
     /// Read from the RX fifo.
-    /// This action updates last_status.
+    /// This action _does_ update `last_status`.
     pub async fn read_fifo<Spi: Cc1200Spi<A>, Chip: Cc1200Chip<A>>(
         &self,
         spi: &mut Spi,
@@ -293,7 +294,7 @@ impl<Port: Cc1200Port, Al: Alarm<T>, T: Tick, A> Cc1200Drv<Port, Al, T, A> {
     }
 
     /// Read the RSSI and RX fifo in one transaction.
-    /// This action updates last_status.
+    /// This action _does_ update `last_status`.
     pub async fn read_rssi_and_fifo<Spi: Cc1200Spi<A>, Chip: Cc1200Chip<A>>(
         &self,
         spi: &mut Spi,
@@ -332,7 +333,7 @@ impl<Port: Cc1200Port, Al: Alarm<T>, T: Tick, A> Cc1200Drv<Port, Al, T, A> {
     }
 
     /// Write to the TX fifo.
-    /// This action updates last_status.
+    /// This action _does_ update `last_status`.
     pub async fn write_fifo<Spi: Cc1200Spi<A>, Chip: Cc1200Chip<A>>(
         &self,
         spi: &mut Spi,
@@ -361,7 +362,7 @@ impl<Port: Cc1200Port, Al: Alarm<T>, T: Tick, A> Cc1200Drv<Port, Al, T, A> {
     }
 
     /// Strobe a command to the chip.
-    /// This action updates last_status.
+    /// This action _does_ update `last_status`.
     pub async fn strobe<Spi: Cc1200Spi<A>, Chip: Cc1200Chip<A>>(
         &self,
         spi: &mut Spi,
@@ -385,7 +386,7 @@ impl<Port: Cc1200Port, Al: Alarm<T>, T: Tick, A> Cc1200Drv<Port, Al, T, A> {
     }
 
     /// Strobe a command to the chip, and continue to do so until `pred` is satisfied.
-    /// This action updates last_status.
+    /// This action _does_ update `last_status`.
     pub async fn strobe_until<Spi: Cc1200Spi<A>, Chip: Cc1200Chip<A>, Pred>(
         &self,
         spi: &mut Spi,
@@ -412,7 +413,7 @@ impl<Port: Cc1200Port, Al: Alarm<T>, T: Tick, A> Cc1200Drv<Port, Al, T, A> {
     }
 
     /// Strobe a command to the chip, and continue to do so until the chip enters the IDLE state.
-    /// This action updates last_status.
+    /// This action _does_ update `last_status`.
     pub async fn strobe_until_idle<Spi: Cc1200Spi<A>, Chip: Cc1200Chip<A>>(
         &self,
         spi: &mut Spi,

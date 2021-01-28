@@ -36,6 +36,8 @@ thr! {
             35: pub spi1;
             58: pub dma2_ch2; // SPI1_RX: DMA2, stream 2 (channel 3).
             59: pub dma2_ch3; // SPI1_TX: DMA2, stream 3 (channel 3).
+
+            19: pub rf; // CAN1_TX
         }
     };
 }

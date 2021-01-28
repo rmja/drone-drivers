@@ -17,6 +17,9 @@
 		},
 		{
 			"path": "../../../drone-core"
+		},
+		{
+			"path": "../../../drone-cortexm"
 		}
 	],
 	"remoteAuthority": "wsl+Ubuntu-20.04",

@@ -148,8 +148,13 @@ impl<
         }
     }
 
-    /// Start packet transmission.
+    /// Start packet transmission asap.
     pub async fn transmit_packet(&mut self) -> Result<(), TxFifoUnderflowError> {
+        self.transmit_packet_delayed(self.driver.alarm.counter(), TimeSpan::ZERO).await
+    }
+
+    /// Start packet transmission after a delay.
+    pub async fn transmit_packet_delayed(&mut self, base: u32, delay: TimeSpan<T>) -> Result<(), TxFifoUnderflowError> {
         assert_ne!(0, self.written_to_fifo, "One must use write() prior to starting transmission");
 
         let pkt_len = self.written_to_fifo + self.write_queue.len();
@@ -173,6 +178,9 @@ impl<
 
             // Set packet length.
             self.driver.write_regs(&mut *spi, &mut *chip, Reg::PKT_LEN, &[(pkt_len % 256) as u8]).await;
+
+            // Everything is setup. Wait for the fire time.
+            self.driver.alarm.sleep_from(base, delay).await;
 
             // Start transmitter.
             self.driver.strobe(&mut *spi, &mut *chip, Strobe::STX).await;

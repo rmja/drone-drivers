@@ -27,7 +27,8 @@ pub async fn handler<
     loop
     {
         let mut spi = spi.try_lock().unwrap();
-        spi.write(&[0x00]).await;
+        // Code cannot compile if this line is included
+        // spi.write(&[0x00]).await;
 
 
 

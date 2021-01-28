@@ -1,4 +1,4 @@
-use core::{cell::RefCell, cmp::min, pin::Pin};
+use core::{cell::RefCell, cmp::min, pin::Pin, sync::atomic::{AtomicBool, Ordering}, task::{Context, Poll}};
 
 use alloc::sync::Arc;
 use drone_core::sync::Mutex;
@@ -30,6 +30,7 @@ pub struct InfiniteController<
     T: Tick,
     A,
 > {
+    receiving: Arc<AtomicBool>,
     driver: Arc<Cc1200Drv<Port, Al, T, A>>,
     spi: Arc<Mutex<Spi>>,
     chip: Arc<RefCell<Chip>>,
@@ -76,6 +77,7 @@ impl<
         driver.hw_reset(&mut chip).await?;
 
         let mut this = Self {
+            receiving: Arc::new(AtomicBool::new(false)),
             driver: Arc::new(driver),
             spi,
             chip: Arc::new(RefCell::new(chip)),
@@ -246,7 +248,7 @@ impl<
     pub async fn receive_stream<'a>(
         &'a mut self,
         capacity: usize,
-    ) -> Pin<Box<dyn Stream<Item = RxChunk<T>> + 'a>> {
+    ) -> ChunkStream<'a, T> {
         let timer_pin = self.timer.pin();
         let fifo_above_thr_stream = self.timer.rising_edge_capture_overwriting_stream(capacity);
 
@@ -273,6 +275,8 @@ impl<
 
             // Do not wait for calibration and settling.
         }
+
+        self.receiving.store(true, Ordering::Relaxed);
 
         let uptime = self.uptime.clone();
         let spi = self.spi.clone();
@@ -326,7 +330,10 @@ impl<
             }
         });
 
-        Box::pin(chunk_stream)
+        ChunkStream {
+            receiving: self.receiving.clone(),
+            stream: Box::pin(chunk_stream),
+        }
     }
 
     pub fn release(self) -> (Cc1200Drv<Port, Al, T, A>, Chip, Tim) {
@@ -338,5 +345,26 @@ impl<
             .expect("Unable to unwrap chip");
 
         (drv, chip.into_inner(), self.timer)
+    }
+}
+
+
+pub struct ChunkStream<'a, T: Tick> {
+    receiving: Arc<AtomicBool>,
+    stream: Pin<Box<dyn Stream<Item = RxChunk<T>> + 'a>>,
+}
+
+impl<T: Tick> Stream for ChunkStream<'_, T> {
+    type Item = RxChunk<T>;
+
+    #[inline]
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        self.stream.as_mut().poll_next(cx)
+    }
+}
+
+impl<T: Tick> Drop for ChunkStream<'_, T> {
+    fn drop(&mut self) {
+        assert!(!self.receiving.load(Ordering::Relaxed), "One must make sure to invoke idle() prior to dropping receive stream");
     }
 }

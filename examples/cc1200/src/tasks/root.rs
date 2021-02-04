@@ -1,12 +1,9 @@
 //! The root task.
 
+use core::{pin::Pin, task::Poll};
+
 use crate::{consts, thr, thr::ThrsInit, Regs, tasks};
 use alloc::sync::Arc;
-use drone_cc1200_drv::{
-    configs::CC1200_WMBUS_MODECMTO_FULL,
-    controllers::{DebugController, InfiniteController},
-    Cc1200Drv, Cc1200Gpio, Cc1200PartNumber,
-};
 use drone_core::{log, sync::Mutex};
 use drone_cortexm::{
     drv::sys_tick::SysTick, periph_sys_tick, reg::prelude::*, swo, thr::prelude::*,
@@ -31,6 +28,7 @@ use drone_stm32f4_hal::{
     tim::{prelude::*, GeneralTimCfg, GeneralTimSetup},
 };
 use drone_time::{AlarmDrv, UptimeDrv};
+use futures::Future;
 
 /// The root task handler.
 #[inline(never)]
@@ -55,6 +53,7 @@ async fn handle(reg: Regs, thr_init: ThrsInit) {
     thr.dma_2_ch_3.enable_int();
 
     thr.rf.enable_int();
+    thr.framesync.enable_int();
 
     // Initialize clocks.
     let rcc = Rcc::init(RccSetup::new(periph_rcc!(reg), thr.rcc));
@@ -200,7 +199,13 @@ async fn handle(reg: Regs, thr_init: ThrsInit) {
         reset_pin,
         miso_exti_line: exti6.line(miso_pin_reset),
     };
-    thr.rf.exec(tasks::rf(port, alarm.clone(), spi.clone(), chip));
+
+    let (tx, rx) = drone_core::sync::spsc::ring::channel(10);
+
+    thr.rf.exec_fn(move || tasks::rf(port, alarm.clone(), spi.clone(), chip, tim4.ch1, uptime, tx));
+
+    thr.framesync.exec_fn(move || tasks::framesync(rx));
+
     // let mut cc1200 = Cc1200Drv::init(port, alarm.clone());
 
     // let mut debug = DebugController::setup(cc1200, spi.clone(), chip, &CC1200_WMBUS_MODECMTO_FULL).await.unwrap();

@@ -14,6 +14,7 @@ pub const SYSTICKCLK: SysTickClk = HCLK.to_systickclk();
 
 pub const TIM2_FREQ: u32 = 1_000_000;
 
+#[derive(Debug)]
 pub struct Tim2Tick;
 impl Tick for Tim2Tick {
     const FREQ: u32 = TIM2_FREQ;

@@ -38,6 +38,7 @@ thr! {
             59: pub dma2_ch3; // SPI1_TX: DMA2, stream 3 (channel 3).
 
             19: pub rf; // CAN1_TX
+            20: pub framesync;
         }
     };
 }

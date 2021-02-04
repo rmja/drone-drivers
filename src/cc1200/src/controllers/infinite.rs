@@ -5,7 +5,7 @@ use drone_core::sync::Mutex;
 use drone_time::{Alarm, Tick, TimeSpan};
 use futures::prelude::*;
 
-use crate::{Cc1200Chip, Cc1200Config, Cc1200Drv, Cc1200Gpio, Cc1200Port, Cc1200Spi, Cc1200Timer, Cc1200Uptime, Rssi, State, TimeoutError, drv::TX_FIFO_SIZE, opcode::{Reg, Strobe}, regs::{FifoCfg, Mdmcfg1, PktCfg0, PktCfg2, RfendCfg0, RfendCfg1}};
+use crate::{Cc1200Chip, Cc1200Config, Cc1200Drv, Cc1200Gpio, Cc1200Port, Cc1200Spi, Cc1200Timer, Cc1200Uptime, Rssi, RxFifoOverflowError, State, TimeoutError, TxFifoUnderflowError, drv::TX_FIFO_SIZE, opcode::{Reg, Strobe}, regs::{FifoCfg, Mdmcfg1, PktCfg0, PktCfg2, RfendCfg0, RfendCfg1}};
 
 /// Asserted when the RX FIFO is filled above FIFO_CFG.FIFO_THR. De-asserted
 /// when the RX FIFO is drained below (or is equal) to the same threshold.
@@ -16,9 +16,6 @@ const GPIO_CFG_RXFIFO_THR: u8 = 0;
 const GPIO_CFG_TXFIFO_THR: u8 = 2;
 /// Asserted when IDLE or RX, de-asserted when TX ot SETTLING.
 const MARC_2PIN_STATUS_1: u8 = 37;
-
-#[derive(Debug)]
-pub struct TxFifoUnderflowError;
 
 pub struct InfiniteController<
     Port: Cc1200Port,
@@ -42,6 +39,7 @@ pub struct InfiniteController<
     write_queue: Vec<u8>,
 }
 
+#[derive(Debug)]
 pub struct RxChunk<T: Tick> {
     /// The upstamp sampled after `fifo_thr` bytes.
     pub upstamp: TimeSpan<T>,
@@ -283,7 +281,7 @@ impl<
         let chip = self.chip.clone();
         let driver = self.driver.clone();
         let fifo_thr = FifoCfg(self.config.reg(Reg::FIFO_CFG).unwrap()).fifo_thr() as usize;
-        let chunk_stream = fifo_above_thr_stream.filter_map(move |capture| {
+        let chunk_stream = fifo_above_thr_stream.then(move |capture| {
             let uptime = uptime.clone();
             let spi = spi.clone();
             let chip = chip.clone();
@@ -291,26 +289,31 @@ impl<
             let timer_pin = timer_pin.clone();
             async move {
                 let upstamp = uptime.upstamp(capture);
-                let mut rssi = None;
-                let mut bytes = vec![];
                 let mut spi = spi.try_lock().unwrap();
                 let mut chip = chip.borrow_mut();
+
+                let mut results: Vec<Result<RxChunk<T>, RxFifoOverflowError>> = vec![];
 
                 // Read until data-ready goes low.
                 while timer_pin.get() {
                     let mut rx_buf = vec![0; fifo_thr];
-                    let chunk_rssi = driver
+                    let rssi = driver
                         .read_rssi_and_fifo(&mut *spi, &mut *chip, &mut rx_buf)
                         .await;
-                    if rssi.is_none() {
-                        rssi = Some(chunk_rssi);
-                    }
 
                     match driver.last_status().state() {
-                        State::RX => {}
+                        State::RX => {
+                            results.push(Ok(RxChunk {
+                                upstamp,
+                                rssi,
+                                bytes: rx_buf,
+                            }));
+                        }
                         State::CALIBRATE => {}
                         State::SETTLING => {}
                         State::RX_FIFO_ERROR => {
+                            results.push(Err(RxFifoOverflowError));
+
                             // Flush RX buffer
                             driver.strobe(&mut *spi, &mut *chip, Strobe::SFRX).await;
                         }
@@ -318,17 +321,13 @@ impl<
                             panic!("Unrecoverable state {:?}", state);
                         }
                     }
-
-                    bytes.append(&mut rx_buf);
                 }
 
-                rssi.map(|rssi| RxChunk {
-                    upstamp,
-                    rssi,
-                    bytes,
-                })
+                let s = stream::iter(results);
+
+                s
             }
-        });
+        }).flatten();
 
         ChunkStream {
             receiving: self.receiving.clone(),
@@ -351,11 +350,11 @@ impl<
 
 pub struct ChunkStream<'a, T: Tick> {
     receiving: Arc<AtomicBool>,
-    stream: Pin<Box<dyn Stream<Item = RxChunk<T>> + 'a>>,
+    stream: Pin<Box<dyn Stream<Item = Result<RxChunk<T>, RxFifoOverflowError>> + 'a>>,
 }
 
 impl<T: Tick> Stream for ChunkStream<'_, T> {
-    type Item = RxChunk<T>;
+    type Item = Result<RxChunk<T>, RxFifoOverflowError>;
 
     #[inline]
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {

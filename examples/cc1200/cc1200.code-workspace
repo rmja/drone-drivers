@@ -20,6 +20,9 @@
 		},
 		{
 			"path": "../../../drone-cortexm"
+		},
+		{
+			"path": "../../../drone-framesync"
 		}
 	],
 	"remoteAuthority": "wsl+Ubuntu-20.04",

@@ -20,6 +20,8 @@ pub enum Cc1200PartNumber {
     Cc1200,
     Cc1201,
 }
+
+#[derive(Debug)]
 pub struct Rssi(pub i8);
 
 pub use self::{
@@ -32,7 +34,7 @@ pub use self::{
         uptime::Cc1200Uptime,
     },
     config::Cc1200Config,
-    drv::{Cc1200Drv, TimeoutError},
+    drv::{Cc1200Drv, TimeoutError, RxFifoOverflowError, TxFifoUnderflowError},
     statusbyte::{State, StatusByte},
     opcode::Strobe,
 };

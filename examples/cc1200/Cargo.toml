@@ -30,7 +30,9 @@ drone-stm32-map = { version = "0.14.0", features = ["dma", "exti", "gpio", "spi"
 drone-time = { version = "0.1.0", features = ["stm32f4"], path="../../../drone-time" }
 drone-stm32f4-hal = { version = "0.1.0", features = ["dma", "exti", "gpio", "rcc", "spi", "tim"], path="../../../drone-stm32f4-hal" }
 drone-cc1200-drv = { version = "0.1.0", features = ["stm32f4"], path="../../src/cc1200" }
+drone-framesync = { version = "0.1.0", path="../../../drone-framesync" }
 async-trait = "0.1"
+bitvec = { version = "0.20", default-features = false, features = ["alloc"] }
 futures = { version = "0.3.0", default-features = false }
 
 [profile.release]

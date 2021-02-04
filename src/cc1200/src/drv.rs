@@ -25,6 +25,12 @@ pub const TX_FIFO_SIZE: usize = 128;
 pub struct TimeoutError;
 
 #[derive(Debug)]
+pub struct RxFifoOverflowError;
+
+#[derive(Debug)]
+pub struct TxFifoUnderflowError;
+
+#[derive(Debug)]
 pub struct InvalidPartNumber;
 
 #[derive(Debug)]

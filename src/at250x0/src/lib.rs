@@ -4,8 +4,8 @@
 
 mod adapters;
 mod aligned_chunks;
-mod drv;
 mod drivers;
+mod drv;
 mod opcode;
 
 extern crate alloc;

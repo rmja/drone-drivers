@@ -1,6 +1,11 @@
 //! The root task.
 
-use crate::{Regs, consts::{self, SysTickTick}, thr, thr::ThrsInit};
+use crate::{
+    consts::{self, SysTickTick},
+    thr,
+    thr::ThrsInit,
+    Regs,
+};
 use alloc::sync::Arc;
 use drone_at250x0_drv::{At250x0Drv, At250x0Kind};
 use drone_core::log;
@@ -8,9 +13,8 @@ use drone_cortexm::{reg::prelude::*, swo, thr::prelude::*};
 use drone_stm32_map::periph::{
     dma::{periph_dma2, periph_dma2_ch2, periph_dma2_ch3},
     gpio::{
-        periph_gpio_a5, periph_gpio_a6, periph_gpio_a7, periph_gpio_a_head, periph_gpio_i1,
-        periph_gpio_b_head, periph_gpio_b0,
-        periph_gpio_i_head,
+        periph_gpio_a5, periph_gpio_a6, periph_gpio_a7, periph_gpio_a_head, periph_gpio_b0,
+        periph_gpio_b_head, periph_gpio_i1, periph_gpio_i_head,
     },
     spi::periph_spi1,
     sys_tick::periph_sys_tick,
@@ -18,10 +22,10 @@ use drone_stm32_map::periph::{
 use drone_stm32f4_hal::{
     dma::{config::*, DmaCfg},
     gpio::{prelude::*, GpioHead},
-    rcc::{prelude::*, periph_flash, periph_pwr, periph_rcc, Flash, Pwr, Rcc, RccSetup},
-    spi::{prelude::*, chipctrl::*, SpiDrv, SpiSetup, SpiPins},
+    rcc::{periph_flash, periph_pwr, periph_rcc, prelude::*, Flash, Pwr, Rcc, RccSetup},
+    spi::{chipctrl::*, prelude::*, SpiDrv, SpiPins, SpiSetup},
 };
-use drone_time::{AlarmDrv, drivers::SysTickAlarmDrv};
+use drone_time::{drivers::SysTickAlarmDrv, AlarmDrv};
 
 /// The root task handler.
 #[inline(never)]
@@ -86,7 +90,11 @@ pub fn handler(reg: Regs, thr_init: ThrsInit) {
         .with_speed(GpioPinSpeed::HighSpeed);
 
     // Deselect other SPI devices on same bus
-    gpio_b.pin(periph_gpio_b0!(reg)).into_output().into_pushpull().set();
+    gpio_b
+        .pin(periph_gpio_b0!(reg))
+        .into_output()
+        .into_pushpull()
+        .set();
 
     // Initialize dma.
     let dma2 = DmaCfg::with_enabled_clock(periph_dma2!(reg));
@@ -108,7 +116,7 @@ pub fn handler(reg: Regs, thr_init: ThrsInit) {
     let mut spi = SpiDrv::init(setup).into_master(miso_dma, mosi_dma);
 
     let mut chip = SpiChip::new_deselected(pin_cs);
-    
+
     let systick = SysTickAlarmDrv::new(periph_sys_tick!(reg), thr.sys_tick);
     let alarm = Arc::new(AlarmDrv::new(systick.counter, systick.timer, SysTickTick));
     let eeprom = At250x0Drv::new(At250x0Kind::At25010b, alarm);

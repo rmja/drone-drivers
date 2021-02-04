@@ -1,8 +1,8 @@
 use crate::{aligned_chunks::SliceExt, opcode::Opcode, At250x0Chip, At250x0Spi};
+use alloc::sync::Arc;
 use core::marker::PhantomData;
 use drone_core::bitfield::Bitfield;
 use drone_time::{Alarm, Tick, TimeSpan};
-use alloc::sync::Arc;
 
 #[derive(Clone, Copy)]
 pub enum At250x0Kind {
@@ -103,8 +103,7 @@ impl<Al: Alarm<T>, T: Tick, A> At250x0Drv<Al, T, A> {
                 // Wait until we can send a new spi command.
                 self.alarm.burn_nanos(t_cs);
 
-                self.write_page(spi, chip, address as u16, slice)
-                    .await;
+                self.write_page(spi, chip, address as u16, slice).await;
 
                 // Write is auto-disabled after sending a WRITE command.
                 write_enabled = false;
@@ -115,13 +114,8 @@ impl<Al: Alarm<T>, T: Tick, A> At250x0Drv<Al, T, A> {
         }
     }
 
-    async fn write_page<Spi, Chip>(
-        &self,
-        spi: &mut Spi,
-        chip: &mut Chip,
-        address: u16,
-        buf: &[u8],
-    ) where
+    async fn write_page<Spi, Chip>(&self, spi: &mut Spi, chip: &mut Chip, address: u16, buf: &[u8])
+    where
         Spi: At250x0Spi<A>,
         Chip: At250x0Chip<A>,
     {
@@ -184,7 +178,7 @@ const fn capacity(kind: At250x0Kind) -> u16 {
 
 /// Get the minimum t_cs time in ns, i.e. the minimum time the CS pin must be de-asserted betweeen commands.
 const fn min_tcs_ns(kind: At250x0Kind) -> u32 {
-        match kind {
+    match kind {
         At250x0Kind::At25010 => 250,
         At250x0Kind::At25020 => 250,
         At250x0Kind::At25040 => 250,

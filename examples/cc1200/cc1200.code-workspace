@@ -20,9 +20,6 @@
 		},
 		{
 			"path": "../../../drone-cortexm"
-		},
-		{
-			"path": "../../../drone-fec"
 		}
 	],
 	"remoteAuthority": "wsl+Ubuntu-20.04",

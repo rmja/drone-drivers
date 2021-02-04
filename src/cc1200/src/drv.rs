@@ -12,7 +12,7 @@ use futures::future::{self, Either};
 pub struct Cc1200Drv<Port: Cc1200Port, Al: Alarm<T>, T: Tick, A> {
     port: RefCell<Port>,
     pub alarm: Arc<Al>,
-    // status: Cell<StatusByte>,
+    status: Cell<StatusByte>,
     rssi_offset: Rssi,
     tick: PhantomData<T>,
     adapter: PhantomData<A>,
@@ -37,7 +37,7 @@ impl<Port: Cc1200Port, Al: Alarm<T>, T: Tick, A> Cc1200Drv<Port, Al, T, A> {
         Self {
             port: RefCell::new(port),
             alarm,
-            // status: Cell::new(StatusByte(0)),
+            status: Cell::new(StatusByte(0)),
             rssi_offset: Rssi(0),
             tick: PhantomData,
             adapter: PhantomData,
@@ -63,8 +63,7 @@ impl<Port: Cc1200Port, Al: Alarm<T>, T: Tick, A> Cc1200Drv<Port, Al, T, A> {
     /// Get the spi status returned by the last register read or strobe.
     /// Writing registers does not update status.
     pub fn last_status(&self) -> StatusByte {
-        // self.status.get()
-        todo!()
+        self.status.get()
     }
 
     /// Read the chip part number.
@@ -123,7 +122,7 @@ impl<Port: Cc1200Port, Al: Alarm<T>, T: Tick, A> Cc1200Drv<Port, Al, T, A> {
 
         chip.select();
         spi.xfer(tx, &mut rx_buf).await;
-        // self.status.set(StatusByte(rx_buf[0]));
+        self.status.set(StatusByte(rx_buf[0]));
         spi.read(buf).await;
         chip.deselect();
     }
@@ -148,7 +147,7 @@ impl<Port: Cc1200Port, Al: Alarm<T>, T: Tick, A> Cc1200Drv<Port, Al, T, A> {
 
         chip.select();
         spi.xfer(tx, &mut rx_buf).await;
-        // self.status.set(StatusByte(rx_buf[0]));
+        self.status.set(StatusByte(rx_buf[0]));
         spi.read(buf).await;
         chip.deselect();
     }
@@ -251,7 +250,7 @@ impl<Port: Cc1200Port, Al: Alarm<T>, T: Tick, A> Cc1200Drv<Port, Al, T, A> {
 
         chip.select();
         spi.xfer(&CMD, &mut rx_buf).await;
-        // self.status.set(StatusByte(rx_buf[0]));
+        self.status.set(StatusByte(rx_buf[0]));
         chip.deselect();
 
         let rssi = rx_buf[2] as i8;
@@ -288,7 +287,7 @@ impl<Port: Cc1200Port, Al: Alarm<T>, T: Tick, A> Cc1200Drv<Port, Al, T, A> {
         let len = 1 + buf.len();
         chip.select();
         spi.xfer(&CMD[..len], &mut rx_buf[..len]).await;
-        // self.status.set(StatusByte(rx_buf[0]));
+        self.status.set(StatusByte(rx_buf[0]));
         chip.deselect();
 
         buf.copy_from_slice(&rx_buf[1..len]);
@@ -323,7 +322,7 @@ impl<Port: Cc1200Port, Al: Alarm<T>, T: Tick, A> Cc1200Drv<Port, Al, T, A> {
         let len = 3 + 1 + buf.len();
         chip.select();
         spi.xfer(&CMD[..len], &mut rx_buf[..len]).await;
-        // self.status.set(StatusByte(rx_buf[0]));
+        self.status.set(StatusByte(rx_buf[0]));
         chip.deselect();
 
         buf.copy_from_slice(&rx_buf[4..len]);
@@ -345,7 +344,7 @@ impl<Port: Cc1200Port, Al: Alarm<T>, T: Tick, A> Cc1200Drv<Port, Al, T, A> {
 
         chip.select();
         spi.xfer(&[Opcode::WriteFifoBurst.val()], &mut rx_buf).await;
-        // self.status.set(StatusByte(rx_buf[0]));
+        self.status.set(StatusByte(rx_buf[0]));
         spi.write(buf).await;
         chip.deselect();
     }
@@ -362,10 +361,6 @@ impl<Port: Cc1200Port, Al: Alarm<T>, T: Tick, A> Cc1200Drv<Port, Al, T, A> {
         }
     }
 
-    pub async fn testing(&self) -> u32 {
-        future::ready(123).await
-    }
-
     /// Strobe a command to the chip.
     /// This action _does_ update `last_status`.
     pub async fn strobe<Spi: Cc1200Spi<A>, Chip: Cc1200Chip<A>>(
@@ -379,7 +374,7 @@ impl<Port: Cc1200Port, Al: Alarm<T>, T: Tick, A> Cc1200Drv<Port, Al, T, A> {
 
         chip.select();
         spi.xfer(&tx_buf, &mut rx_buf).await;
-        // self.status.set(StatusByte(rx_buf[0]));
+        self.status.set(StatusByte(rx_buf[0]));
 
         if strobe == Strobe::SRES {
             // When SRES strobe is issued the CSn pin must be kept low until the SO pin goes low again.
@@ -408,11 +403,11 @@ impl<Port: Cc1200Port, Al: Alarm<T>, T: Tick, A> Cc1200Drv<Port, Al, T, A> {
         chip.select();
         loop {
             spi.xfer(&tx_buf, &mut rx_buf).await;
-            // self.status.set(StatusByte(rx_buf[0]));
+            self.status.set(StatusByte(rx_buf[0]));
 
-            // if pred(self.status.get()) {
-            //     break;
-            // }
+            if pred(self.status.get()) {
+                break;
+            }
         }
         chip.deselect();
     }

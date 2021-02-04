@@ -67,16 +67,19 @@ pub fn handler(reg: Regs, thr_init: ThrsInit) {
         .pin(periph_gpio_a5!(reg))
         .into_alternate()
         .into_pushpull()
+        .into_nopull()
         .with_speed(GpioPinSpeed::HighSpeed);
     let pin_miso = gpio_a
         .pin(periph_gpio_a6!(reg))
         .into_alternate()
         .into_pushpull()
+        .into_nopull()
         .with_speed(GpioPinSpeed::HighSpeed);
     let pin_mosi = gpio_a
         .pin(periph_gpio_a7!(reg))
         .into_alternate()
         .into_pushpull()
+        .into_nopull()
         .with_speed(GpioPinSpeed::HighSpeed);
     let pin_cs = gpio_i
         .pin(periph_gpio_i1!(reg))

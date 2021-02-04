@@ -47,14 +47,14 @@ impl<Port: Cc1200Port, Spi: Cc1200Spi<A>, Chip: Cc1200Chip<A>, Al: Alarm<T>, T: 
     }
 
     pub async fn idle(&mut self) {
-        let mut spi = self.spi.try_lock().unwrap();
+        let mut spi = self.spi.lock().await;
         self.driver
             .strobe_until_idle(&mut *spi, &mut self.chip, Strobe::SIDLE)
             .await;
     }
 
     pub async fn tx_unmodulated(&mut self) {
-        let mut spi = self.spi.try_lock().unwrap();
+        let mut spi = self.spi.lock().await;
 
         // Write default configuration.
         self.driver
@@ -93,7 +93,7 @@ impl<Port: Cc1200Port, Spi: Cc1200Spi<A>, Chip: Cc1200Chip<A>, Al: Alarm<T>, T: 
     }
 
     pub async fn tx_modulated_01(&mut self) {
-        let mut spi = self.spi.try_lock().unwrap();
+        let mut spi = self.spi.lock().await;
 
         // Write default configuration.
         self.driver
@@ -134,7 +134,7 @@ impl<Port: Cc1200Port, Spi: Cc1200Spi<A>, Chip: Cc1200Chip<A>, Al: Alarm<T>, T: 
     }
 
     pub async fn tx_modulated_pn9(&mut self) {
-        let mut spi = self.spi.try_lock().unwrap();
+        let mut spi = self.spi.lock().await;
 
         // Write default configuration.
         self.driver
@@ -169,7 +169,7 @@ impl<Port: Cc1200Port, Spi: Cc1200Spi<A>, Chip: Cc1200Chip<A>, Al: Alarm<T>, T: 
 
     pub async fn rx(&mut self, data: Option<Cc1200Gpio>, clk: Option<Cc1200Gpio>) {
         // Enable custom frequency modulation
-        let mut spi = self.spi.try_lock().unwrap();
+        let mut spi = self.spi.lock().await;
 
         // Write default configuration.
         self.driver

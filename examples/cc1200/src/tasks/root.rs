@@ -86,7 +86,6 @@ async fn handle(reg: Regs, thr_init: ThrsInit) {
         .pin(periph_gpio_a5!(reg))
         .into_alternate()
         .into_pushpull()
-        .into_nopull()
         .with_speed(GpioPinSpeed::MediumSpeed);
     let miso_pin = gpio_a
         .pin(periph_gpio_a6!(reg))
@@ -98,7 +97,6 @@ async fn handle(reg: Regs, thr_init: ThrsInit) {
         .pin(periph_gpio_a7!(reg))
         .into_alternate()
         .into_pushpull()
-        .into_nopull()
         .with_speed(GpioPinSpeed::MediumSpeed);
     let cs_pin = gpio_b
         .pin(periph_gpio_b0!(reg))

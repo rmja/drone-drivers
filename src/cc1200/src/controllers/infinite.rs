@@ -117,7 +117,7 @@ impl<
     pub async fn write_config<'a>(&mut self, config: &Cc1200Config<'a>) {
         Self::assert_compatible_config(config);
 
-        let mut spi = self.spi.try_lock().unwrap();
+        let mut spi = self.spi.lock().await;
         let mut chip = self.chip.borrow_mut();
 
         // Patch the configuration.
@@ -126,7 +126,7 @@ impl<
 
     /// Transition chip to idle state.
     pub async fn idle(&mut self) {
-        let mut spi = self.spi.try_lock().unwrap();
+        let mut spi = self.spi.lock().await;
         let mut chip = self.chip.borrow_mut();
         self.driver
             .strobe_until_idle(&mut *spi, &mut *chip, Strobe::SIDLE)
@@ -140,7 +140,7 @@ impl<
         self.write_queue.extend_from_slice(buf);
 
         if self.written_to_fifo < TX_FIFO_SIZE {
-            let mut spi = self.spi.try_lock().unwrap();
+            let mut spi = self.spi.lock().await;
             let mut chip = self.chip.borrow_mut();
 
             let len = min(self.write_queue.len(), TX_FIFO_SIZE - self.written_to_fifo);
@@ -166,7 +166,7 @@ impl<
         let mut fifo_below_thr_stream = self.timer.falling_edge_capture_overwriting_stream(1);
 
         {
-            let mut spi = self.spi.try_lock().unwrap();
+            let mut spi = self.spi.lock().await;
             let mut chip = self.chip.borrow_mut();
 
             // Setup fifo pin.
@@ -196,7 +196,7 @@ impl<
             fifo_below_thr_stream.next().await;
             
             while !timer_pin.get() {
-                let mut spi = self.spi.try_lock().unwrap();
+                let mut spi = self.spi.lock().await;
                 let mut chip = self.chip.borrow_mut();
 
                 let len = core::cmp::min(self.write_queue.len(), fifo_thr);
@@ -220,7 +220,7 @@ impl<
         drop(fifo_below_thr_stream);
 
         {
-            let mut spi = self.spi.try_lock().unwrap();
+            let mut spi = self.spi.lock().await;
             let mut chip = self.chip.borrow_mut();
 
             // Start listening for a rising edge
@@ -253,7 +253,7 @@ impl<
         let fifo_above_thr_stream = self.timer.rising_edge_capture_overwriting_stream(capacity);
 
         {
-            let mut spi = self.spi.try_lock().unwrap();
+            let mut spi = self.spi.lock().await;
             let mut chip = self.chip.borrow_mut();
 
             // Setup fifo pin.
@@ -293,7 +293,7 @@ impl<
                 let upstamp = uptime.upstamp(capture);
                 let mut rssi = None;
                 let mut bytes = vec![];
-                let mut spi = spi.try_lock().unwrap();
+                let mut spi = spi.lock().await;
                 let mut chip = chip.borrow_mut();
 
                 // Read until data-ready goes low.

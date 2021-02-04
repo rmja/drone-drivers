@@ -26,7 +26,7 @@ pub async fn handler<
 >(port: adapters::cc1200::Port<ResetPin, MisoPin, MisoAf, MisoExti, MisoExtiInt>, alarm: Arc<Al>, spi: Arc<Mutex<SpiMasterDrv<Spi, DmaRx, DmaRxInt, DmaTx, DmaTxInt>>>, mut chip: Chip) {
     loop
     {
-        let mut spi = spi.try_lock().unwrap();
+        let mut spi = spi.lock().await;
         // Code cannot compile if this line is included
         // spi.write(&[0x00]).await;
 

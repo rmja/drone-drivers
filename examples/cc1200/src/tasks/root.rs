@@ -137,7 +137,8 @@ async fn handle(reg: Regs, thr_init: ThrsInit) {
         gpio_i
             .pin(periph_gpio_i1!(reg))
             .into_output()
-            .into_pushpull(),
+            .into_pushpull()
+            .into_pullup()
     );
 
     // Initialize CC1200 gpio pins

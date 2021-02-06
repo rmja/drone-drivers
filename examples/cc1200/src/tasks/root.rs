@@ -202,9 +202,9 @@ async fn handle(reg: Regs, thr_init: ThrsInit) {
 
     let (tx, rx) = drone_core::sync::spsc::ring::channel(10);
 
-    thr.rf.exec_fn(move || tasks::rf(port, alarm.clone(), spi.clone(), chip, tim4.ch1, uptime, tx));
+    thr.rf.exec_factory(move || tasks::rf(port, alarm.clone(), spi.clone(), chip, tim4.ch1, uptime, tx));
 
-    thr.framesync.exec_fn(move || tasks::framesync(rx));
+    thr.framesync.exec_factory(move || tasks::framesync(rx));
 
     // let mut cc1200 = Cc1200Drv::init(port, alarm.clone());
 

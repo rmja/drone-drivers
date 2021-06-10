@@ -29,19 +29,19 @@ impl<Port: Cc1200Port, Spi: Cc1200Spi<A>, Chip: Cc1200Chip<A>, Al: Alarm<T>, T: 
     pub async fn setup(
         driver: Cc1200Drv<Port, Al, T, A>,
         spi: Arc<Mutex<Spi>>,
-        chip: Chip,
+        mut chip: Chip,
         config: &'static Cc1200Config<'static>,
     ) -> Result<Self, TimeoutError> {
         assert!(config.is_full());
 
-        let mut ctrl = Self {
+        driver.hw_reset(&mut chip).await?;
+
+        let ctrl = Self {
             driver,
             spi,
             chip,
             config,
         };
-
-        ctrl.driver.hw_reset(&mut ctrl.chip).await?;
 
         Ok(ctrl)
     }

@@ -3,9 +3,10 @@
 #![feature(prelude_import)]
 #![feature(proc_macro_hygiene)]
 #![feature(slice_ptr_get)]
-#![feature(never_type)]
+#![feature(drain_filter)]
 #![cfg_attr(not(feature = "std"), no_std)]
 
+#[macro_use]
 extern crate alloc;
 
 mod adapters;

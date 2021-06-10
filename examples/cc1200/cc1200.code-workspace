@@ -23,6 +23,9 @@
 		},
 		{
 			"path": "../../../drone-framesync"
+		},
+		{
+			"path": "../../../drone-mbus"
 		}
 	],
 	"remoteAuthority": "wsl+Ubuntu-20.04",

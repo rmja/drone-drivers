@@ -1,4 +1,4 @@
-use core::{cell::RefCell, cmp::min, pin::Pin, sync::atomic::{AtomicBool, Ordering}, task::{Context, Poll}};
+use core::{cell::RefCell, cmp::min, pin::Pin, sync::atomic::{AtomicU8, Ordering}, task::{Context, Poll}};
 
 use alloc::sync::Arc;
 use drone_core::sync::Mutex;
@@ -27,7 +27,6 @@ pub struct InfiniteController<
     T: Tick,
     A,
 > {
-    receiving: Arc<AtomicBool>,
     driver: Arc<Cc1200Drv<Port, Al, T, A>>,
     spi: Arc<Mutex<Spi>>,
     chip: Arc<RefCell<Chip>>,
@@ -41,9 +40,9 @@ pub struct InfiniteController<
 
 #[derive(Debug)]
 pub struct RxChunk<T: Tick> {
-    /// The upstamp sampled after `fifo_thr` bytes.
+    /// The upstamp sampled when `fifo_thr` bytes has arrived in the CC1200 rx buffer.
     pub upstamp: TimeSpan<T>,
-    /// The rssi sampled after `fifo_thr` bytes.
+    /// The rssi sampled after `fifo_thr` bytes are in the rx buffer.
     pub rssi: Rssi,
     /// The received bytes, always a multiple of `fifo_thr`.
     pub bytes: Vec<u8>,
@@ -70,12 +69,11 @@ impl<
         fifo_gpio: Cc1200Gpio,
     ) -> Result<Self, TimeoutError> {
         assert!(config.is_full());
-        Self::assert_compatible_config(config);
+        assert_compatible_config(config);
 
         driver.hw_reset(&mut chip).await?;
 
-        let mut this = Self {
-            receiving: Arc::new(AtomicBool::new(false)),
+        let mut ctrl = Self {
             driver: Arc::new(driver),
             spi,
             chip: Arc::new(RefCell::new(chip)),
@@ -87,33 +85,14 @@ impl<
             write_queue: Vec::new(),
         };
 
-        this.write_config(config).await;
+        ctrl.write_config(config).await;
 
-        Ok(this)
-    }
-
-    /// Ensure that a config is compatible with the controller operation.
-    fn assert_compatible_config<'a>(config: &Cc1200Config<'a>) {
-        if let Some(val) = config.reg(Reg::MDMCFG1) {
-            assert_eq!(val, Mdmcfg1(val).set_fifo_en().0); // FIFO must be enabled.
-        }
-
-        if let Some(val) = config.reg(Reg::PKT_CFG2) {
-            assert_eq!(val, PktCfg2(val).write_pkt_format(0b00).0); // Packet mode must be Normal/FIFO mode.
-        }
-
-        if let Some(val) = config.reg(Reg::RFEND_CFG1) {
-            assert_eq!(val, RfendCfg1(val).write_rxoff_mode(0b11).0); // Must re-enter RX when RX ends.
-        }
-
-        if let Some(val) = config.reg(Reg::RFEND_CFG0) {
-            assert_eq!(val, RfendCfg0(val).write_txoff_mode(0b11).0); // Must enter IDLE after TX ends.
-        }
+        Ok(ctrl)
     }
 
     /// Patch the currently assigned configuration.
     pub async fn write_config<'a>(&mut self, config: &Cc1200Config<'a>) {
-        Self::assert_compatible_config(config);
+        assert_compatible_config(config);
 
         let mut spi = self.spi.lock().await;
         let mut chip = self.chip.borrow_mut();
@@ -149,11 +128,13 @@ impl<
     }
 
     /// Start packet transmission asap.
+    /// The transmitter enters idle after the transmission completes.
     pub async fn transmit_packet(&mut self) -> Result<(), TxFifoUnderflowError> {
         self.transmit_packet_delayed(self.driver.alarm.counter(), TimeSpan::ZERO).await
     }
 
     /// Start packet transmission after a delay.
+    /// The transmitter enters idle after the transmission completes.
     pub async fn transmit_packet_delayed(&mut self, base: u32, delay: TimeSpan<T>) -> Result<(), TxFifoUnderflowError> {
         assert_ne!(0, self.written_to_fifo, "One must use write() prior to starting transmission");
 
@@ -243,12 +224,16 @@ impl<
     }
 
     /// Start receiver in infinite packet mode reception.
+    /// Note that the receiver is _not_ stopped when the stream is dropped, so idle() must be called manually after the stream is dropped.
     pub async fn receive_stream<'a>(
         &'a mut self,
         capacity: usize,
     ) -> ChunkStream<'a, T> {
         let timer_pin = self.timer.pin();
-        let fifo_above_thr_stream = self.timer.rising_edge_capture_overwriting_stream(capacity);
+        // Start listen for fifo interrupts before the receiver is started.
+        // The capacity is 2 is that it allows for detecting of one rising edge while we are already draining the fifo.
+        // That extra edge may happen multiple times in which case only the last on is actually executed.
+        let fifo_above_thr_stream = self.timer.rising_edge_capture_overwriting_stream(2);
 
         {
             let mut spi = self.spi.lock().await;
@@ -274,8 +259,6 @@ impl<
             // Do not wait for calibration and settling.
         }
 
-        self.receiving.store(true, Ordering::Relaxed);
-
         let uptime = self.uptime.clone();
         let spi = self.spi.clone();
         let chip = self.chip.clone();
@@ -289,7 +272,7 @@ impl<
             let timer_pin = timer_pin.clone();
             async move {
                 let upstamp = uptime.upstamp(capture);
-                let mut spi = spi.try_lock().unwrap();
+                let mut spi = spi.lock().await;
                 let mut chip = chip.borrow_mut();
 
                 let mut results: Vec<Result<RxChunk<T>, RxFifoOverflowError>> = vec![];
@@ -330,7 +313,6 @@ impl<
         }).flatten();
 
         ChunkStream {
-            receiving: self.receiving.clone(),
             stream: Box::pin(chunk_stream),
         }
     }
@@ -347,9 +329,27 @@ impl<
     }
 }
 
+/// Ensure that a config is compatible with the controller operation.
+fn assert_compatible_config<'a>(config: &Cc1200Config<'a>) {
+    if let Some(val) = config.reg(Reg::MDMCFG1) {
+        assert_eq!(val, Mdmcfg1(val).set_fifo_en().0, "FIFO must be enabled");
+    }
+
+    if let Some(val) = config.reg(Reg::PKT_CFG2) {
+        assert_eq!(val, PktCfg2(val).write_pkt_format(0b00).0, "Packet mode must be Normal/FIFO mode");
+    }
+
+    if let Some(val) = config.reg(Reg::RFEND_CFG1) {
+        assert_eq!(val, RfendCfg1(val).write_rxoff_mode(0b11).0, "Must re-enter RX when RX ends");
+    }
+
+    if let Some(val) = config.reg(Reg::RFEND_CFG0) {
+        assert_eq!(val, RfendCfg0(val).write_txoff_mode(0b00).0, "Must enter IDLE after TX ends");
+    }
+}
+
 
 pub struct ChunkStream<'a, T: Tick> {
-    receiving: Arc<AtomicBool>,
     stream: Pin<Box<dyn Stream<Item = Result<RxChunk<T>, RxFifoOverflowError>> + 'a>>,
 }
 
@@ -362,8 +362,14 @@ impl<T: Tick> Stream for ChunkStream<'_, T> {
     }
 }
 
-impl<T: Tick> Drop for ChunkStream<'_, T> {
-    fn drop(&mut self) {
-        assert!(!self.receiving.load(Ordering::Relaxed), "One must make sure to invoke idle() prior to dropping receive stream");
+#[cfg(test)]
+pub mod tests {
+    use crate::configs::CC1200_WMBUS_MODECMTO_FULL;
+
+    use super::*;
+
+    #[test]
+    pub fn configs_are_compatible() {
+        assert_compatible_config(&CC1200_WMBUS_MODECMTO_FULL);
     }
 }

@@ -1,5 +1,5 @@
 #![allow(unused_attributes)]
-#![rustfmt::skip]
+#![cfg_attr(rustfmt, rustfmt_skip)]
 
 use drone_core::bitfield::Bitfield;
 

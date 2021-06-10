@@ -23,7 +23,7 @@ use drone_stm32f4_hal::{
     dma::{config::*, DmaCfg},
     gpio::{prelude::*, GpioHead},
     rcc::{periph_flash, periph_pwr, periph_rcc, prelude::*, Flash, Pwr, Rcc, RccSetup},
-    spi::{chipctrl::*, prelude::*, SpiDrv, SpiPins, SpiSetup},
+    spi::{self, chipctrl::*, prelude::*},
 };
 use drone_time::{drivers::SysTickAlarmDrv, AlarmDrv};
 
@@ -38,9 +38,9 @@ pub fn handler(reg: Regs, thr_init: ThrsInit) {
 
     // Enable interrupts.
     thr.rcc.enable_int();
-    thr.spi_1.enable_int();
-    thr.dma_2_ch_2.enable_int();
-    thr.dma_2_ch_3.enable_int();
+    thr.spi1.enable_int();
+    thr.dma2_ch2.enable_int();
+    thr.dma2_ch3.enable_int();
 
     // Initialize clocks.
     let rcc = Rcc::init(RccSetup::new(periph_rcc!(reg), thr.rcc));
@@ -98,22 +98,22 @@ pub fn handler(reg: Regs, thr_init: ThrsInit) {
 
     // Initialize dma.
     let dma2 = DmaCfg::with_enabled_clock(periph_dma2!(reg));
-    let miso_dma = dma2.ch(DmaChSetup::new(periph_dma2_ch2!(reg), thr.dma_2_ch_2));
-    let mosi_dma = dma2.ch(DmaChSetup::new(periph_dma2_ch3!(reg), thr.dma_2_ch_3));
+    let miso_dma = dma2.ch(DmaChSetup::new(periph_dma2_ch2!(reg), thr.dma2_ch2));
+    let mosi_dma = dma2.ch(DmaChSetup::new(periph_dma2_ch3!(reg), thr.dma2_ch3));
 
     // Initialize spi.
-    let pins = SpiPins::default()
+    let pins = spi::SpiPins::default()
         .sck(pin_sck)
         .miso(pin_miso)
         .mosi(pin_mosi);
-    let setup = SpiSetup::new(
+    let setup = spi::SpiSetup::new(
         periph_spi1!(reg),
-        thr.spi_1,
+        thr.spi1,
         pins,
         pclk2,
-        BaudRate::Max(5_000_000),
+        spi::BaudRate::Max(5_000_000),
     );
-    let mut spi = SpiDrv::init(setup).into_master(miso_dma, mosi_dma);
+    let mut spi = spi::SpiDrv::init(setup).into_master(miso_dma, mosi_dma);
 
     let mut chip = SpiChip::new_deselected(pin_cs);
 

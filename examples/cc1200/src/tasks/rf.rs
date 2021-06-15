@@ -17,13 +17,17 @@ pub async fn handler<
     Timer: Cc1200Timer<A> + Send,
     Upt: Cc1200Uptime<Tim2Tick, A> + Send,
     A: Send,
->(port: Port, alarm: Arc<Al>, spi: Arc<Mutex<Spi>>, chip: Chip, timer: Timer, uptime: Arc<Upt>, mut sender: Sender<Result<RxChunk<Tim2Tick>, RxFifoOverflowError>, RxFifoOverflowError>) {
+>(port: Port, alarm: Arc<Al>, spi: Arc<Mutex<Spi>>, mut chip: Chip, timer: Timer, uptime: Arc<Upt>, mut sender: Sender<Result<RxChunk<Tim2Tick>, RxFifoOverflowError>, RxFifoOverflowError>) {
 
     let drv = Cc1200Drv::init(port, alarm);
+
+    // Issue hardware reset sequence
+    drv.hw_reset(&mut chip).await.unwrap();
+
     let mut ctrl = InfiniteController::setup(drv, spi, chip, timer, uptime, &CC1200_WMBUS_MODECMTO_FULL, Cc1200Gpio::Gpio0).await.unwrap();
     
     loop {
-        let mut chunk_stream = ctrl.receive_stream(4).await;
+        let mut chunk_stream = ctrl.receive(4).await;
         while let Some(chunk) = chunk_stream.next().await {
             let send_result = sender.send(chunk);
 

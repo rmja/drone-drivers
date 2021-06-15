@@ -34,8 +34,6 @@ impl<Port: Cc1200Port, Spi: Cc1200Spi<A>, Chip: Cc1200Chip<A>, Al: Alarm<T>, T: 
     ) -> Result<Self, TimeoutError> {
         assert!(config.is_full());
 
-        driver.hw_reset(&mut chip).await?;
-
         let ctrl = Self {
             driver,
             spi,

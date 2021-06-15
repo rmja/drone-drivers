@@ -4,7 +4,7 @@ use core::{pin::Pin, task::Poll};
 
 use crate::{consts, thr, thr::ThrsInit, Regs, tasks};
 use alloc::sync::Arc;
-use drone_cc1200_drv::{Cc1200Drv, Cc1200Gpio, configs::CC1200_WMBUS_MODECMTO_FULL, controllers::{debug::DebugController, infinite::InfiniteController}};
+use drone_cc1200_drv::{Cc1200Drv, Cc1200Gpio, configs::CC1200_WMBUS_MODECMTO_FULL, controllers::{debug::DebugController, infinite::InfiniteController, packet::PacketController}};
 use drone_core::{log, sync::Mutex};
 use drone_cortexm::{
     drv::sys_tick::SysTick, periph_sys_tick, reg::prelude::*, swo, thr::prelude::*,
@@ -259,6 +259,9 @@ async fn handle(reg: Regs, thr_init: ThrsInit) {
         // SIMPLE EXAMPLES BELOW
         let mut cc1200 = Cc1200Drv::init(port, alarm.clone());
 
+        // Issue the hardware reset sequence
+        cc1200.hw_reset(&mut cc1200_cs).await.unwrap();
+
         // Debug controller example:
         let mut debug = DebugController::setup(cc1200, spi.clone(), cc1200_cs, &CC1200_WMBUS_MODECMTO_FULL).await.unwrap();
         debug.tx_unmodulated().await;
@@ -285,7 +288,7 @@ async fn handle(reg: Regs, thr_init: ThrsInit) {
         .unwrap();
 
         let mut count = 0;
-        let mut chunk_stream = infinite.receive_stream(1).await;
+        let mut chunk_stream = infinite.receive(1).await;
         while let Some(whoot) = chunk_stream.next().await {
             // println!("{:?}", whoot.upstamp);
             count += 1;
@@ -296,11 +299,24 @@ async fn handle(reg: Regs, thr_init: ThrsInit) {
         }
         drop(chunk_stream);
         infinite.idle().await;
+        let (cc1200, cc1200_cs, tim4ch1) = infinite.release();
+
+        let mut packet = PacketController::setup(
+            cc1200,
+            spi.clone(),
+            cc1200_cs,
+            tim4ch1,
+            uptime.clone(),
+            &CC1200_WMBUS_MODECMTO_FULL,
+            Cc1200Gpio::Gpio0,
+        )
+        .await
+        .unwrap();
 
         let tx: Vec<u8> = (0..=255).collect();
-        infinite.write(&tx).await;
+        packet.write(&tx).await;
         let before = uptime.now();
-        infinite.transmit_packet().await.unwrap();
+        packet.transmit().await.unwrap();
         let after = uptime.now();
         let tx_us = (after - before).as_micros();
         println!("Tx strobe + actual transmission took {}us", tx_us);

@@ -4,7 +4,7 @@ use core::{pin::Pin, task::Poll};
 
 use crate::{consts, thr, thr::ThrsInit, Regs, tasks};
 use alloc::sync::Arc;
-use drone_cc1200_drv::{Cc1200Drv, Cc1200Gpio, configs::CC1200_WMBUS_MODECMTO_FULL, controllers::{debug::DebugController, infinite::InfiniteController, packet::PacketController}};
+use drone_cc1200_drv::{Cc1200Drv, Cc1200Gpio, configs::{CC1200_WMBUS_MODECMTO_FULL_INFINITY, CC1200_WMBUS_MODECMTO_FULL_PACKET}, controllers::{debug::DebugController, infinite::InfiniteController, packet::PacketController}};
 use drone_core::{log, sync::Mutex};
 use drone_cortexm::{
     drv::sys_tick::SysTick, periph_sys_tick, reg::prelude::*, swo, thr::prelude::*,
@@ -34,7 +34,7 @@ use drone_stm32f4_hal::{
     uart::{self, prelude::*}
 };
 use drone_time::{prelude::*, AlarmDrv, TimeSpan, UptimeDrv};
-use futures::Future;
+use futures::{Future, future::{self, Either}};
 use futures::prelude::*;
 
 const EXAMPLE_TYPE: u32 = 1;
@@ -263,63 +263,75 @@ async fn handle(reg: Regs, thr_init: ThrsInit) {
         cc1200.hw_reset(&mut cc1200_cs).await.unwrap();
 
         // Debug controller example:
-        let mut debug = DebugController::setup(cc1200, spi.clone(), cc1200_cs, &CC1200_WMBUS_MODECMTO_FULL).await.unwrap();
-        debug.tx_unmodulated().await;
-        alarm.sleep(TimeSpan::from_secs(3)).await;
-        debug.tx_modulated_01().await;
-        alarm.sleep(TimeSpan::from_secs(3)).await;
-        debug.tx_modulated_pn9().await;
-        alarm.sleep(TimeSpan::from_secs(3)).await;
-        debug.idle().await;
-        let (cc1200, cc1200_cs) = debug.release();
+        // let mut debug = DebugController::setup(cc1200, spi.clone(), cc1200_cs, &CC1200_WMBUS_MODECMTO_FULL_INFINITY).await.unwrap();
+        // debug.tx_unmodulated().await;
+        // alarm.sleep(TimeSpan::from_secs(3)).await;
+        // debug.tx_modulated_01().await;
+        // alarm.sleep(TimeSpan::from_secs(3)).await;
+        // debug.tx_modulated_pn9().await;
+        // alarm.sleep(TimeSpan::from_secs(3)).await;
+        // debug.idle().await;
+        // let (cc1200, cc1200_cs) = debug.release();
 
 
         // Infinite controller example
-        let mut infinite = InfiniteController::setup(
-            cc1200,
-            spi.clone(),
-            cc1200_cs,
-            tim4.ch1,
-            uptime.clone(),
-            &CC1200_WMBUS_MODECMTO_FULL,
-            Cc1200Gpio::Gpio0,
-        )
-        .await
-        .unwrap();
+        // let mut infinite = InfiniteController::setup(
+        //     cc1200,
+        //     spi.clone(),
+        //     cc1200_cs,
+        //     tim4.ch1,
+        //     uptime.clone(),
+        //     &CC1200_WMBUS_MODECMTO_FULL_INFINITY,
+        //     Cc1200Gpio::Gpio0,
+        // )
+        // .await
+        // .unwrap();
 
-        let mut count = 0;
-        let mut chunk_stream = infinite.receive(1).await;
-        while let Some(whoot) = chunk_stream.next().await {
-            // println!("{:?}", whoot.upstamp);
-            count += 1;
+        // let mut count: i32 = 0;
+        // let mut chunk_stream = infinite.receive(1).await;
+        // while let Some(whoot) = chunk_stream.next().await {
+        //     // println!("{:?}", whoot.upstamp);
+        //     count += 1;
 
-            if count == 10000 {
-                break;
-            }
-        }
-        drop(chunk_stream);
-        infinite.idle().await;
-        let (cc1200, cc1200_cs, tim4ch1) = infinite.release();
+        //     if count == 10000 {
+        //         break;
+        //     }
+        // }
+        // drop(chunk_stream);
+        // infinite.idle().await;
+        // let (cc1200, cc1200_cs, tim4ch1) = infinite.release();
 
         let mut packet = PacketController::setup(
             cc1200,
             spi.clone(),
             cc1200_cs,
-            tim4ch1,
+            tim4.ch1,
             uptime.clone(),
-            &CC1200_WMBUS_MODECMTO_FULL,
+            &CC1200_WMBUS_MODECMTO_FULL_PACKET,
             Cc1200Gpio::Gpio0,
         )
         .await
         .unwrap();
 
-        let tx: Vec<u8> = (0..=255).collect();
-        packet.write(&tx).await;
-        let before = uptime.now();
-        packet.transmit().await.unwrap();
-        let after = uptime.now();
-        let tx_us = (after - before).as_micros();
-        println!("Tx strobe + actual transmission took {}us", tx_us);
+        // let tx: Vec<u8> = (0..=255).collect();
+        // for length in 1..=256 {
+        //     packet.write(&tx[0..length]).await;
+        //     let before = uptime.now();
+        //     packet.transmit().await.unwrap();
+        //     let after = uptime.now();
+        //     let tx_us = (after - before).as_micros();
+        //     println!("Tx strobe + actual transmission took {}us", tx_us);
+        // }
+
+        // Let the receiver run until 10 seconds, or until 5 seconds after the last received packet.
+        let mut stop = alarm.sleep(TimeSpan::from_secs(120));
+        let mut packet_stream = packet.receive_fixed_length(20).await;
+        // The receiver is started, start waiting for packets.
+        while let Either::Left(whoot) = future::select(packet_stream.next(), stop).await {
+            stop = alarm.sleep(TimeSpan::from_secs(60));
+        }
+
+        println!("Rx completed");
     }
 
     // Enter a sleep state on ISR exit.

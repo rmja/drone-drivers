@@ -26,7 +26,7 @@ use crate::{
 ///     SYNC_CFG1      0xAB  32 bit syncword
 ///     PREAMBLE_CFG1  0x19  4 byte AA style preamble
 ///     MDMCFG1        0x42  FIFO enabled
-///     FIFO_CFG       0x10  16 bytes FIFO threshold
+///     FIFO_CFG       0x0F  16 bytes FIFO threshold
 ///     SETTLING_CFG   0x0B  Enable auto-calibration when going from IDLE to RX/TX
 ///     PKT_CFG2       0x00  Use FIFO packet mode
 ///     PKT_CFG0       0x40  Infinite packet length mode
@@ -63,7 +63,7 @@ pub const CC1200_WMBUS_MODECMTO_FULL_PACKET: Cc1200Config = Cc1200Config {
         0x20, // AGC_CFG2              Automatic Gain Control Configuration Reg. 2
         0x12, // AGC_CFG1              Automatic Gain Control Configuration Reg. 1
         0x80, // AGC_CFG0              Automatic Gain Control Configuration Reg. 0
-        0x10, // FIFO_CFG              FIFO Configuration
+        0x0F, // FIFO_CFG              FIFO Configuration
         0x00, // DEV_ADDR              Device Address Configuration
         0x0B, // SETTLING_CFG          Frequency Synthesizer Calibration and Settling Con..
         0x12, // FS_CFG                Frequency Synthesizer Configuration
@@ -170,7 +170,7 @@ pub const CC1200_WMBUS_MODECMTO_FULL_PACKET: Cc1200Config = Cc1200Config {
 ///     SYNC_CFG1      0xFF  Dual syncword mode (2x16 bit syncwords)
 ///     PREAMBLE_CFG1  0x19  4 byte AA style preamble
 ///     MDMCFG1        0x42  FIFO enabled
-///     FIFO_CFG       0x10  16 bytes FIFO threshold
+///     FIFO_CFG       0x0F  16 bytes FIFO threshold
 ///     SETTLING_CFG   0x0B  Enable auto-calibration when going from IDLE to RX/TX
 ///     PKT_CFG2       0x00  Use FIFO packet mode
 ///     PKT_CFG0       0x40  Infinite packet length mode
@@ -213,7 +213,7 @@ pub const CC1200_WMBUS_MODECMTO_FULL_INFINITY: Cc1200Config = Cc1200Config {
         0x20, // AGC_CFG2              Automatic Gain Control Configuration Reg. 2
         0x12, // AGC_CFG1              Automatic Gain Control Configuration Reg. 1
         0x80, // AGC_CFG0              Automatic Gain Control Configuration Reg. 0
-        0x10, // FIFO_CFG              FIFO Configuration
+        0x0F, // FIFO_CFG              FIFO Configuration
         0x00, // DEV_ADDR              Device Address Configuration
         0x0B, // SETTLING_CFG          Frequency Synthesizer Calibration and Settling Con..
         0x12, // FS_CFG                Frequency Synthesizer Configuration

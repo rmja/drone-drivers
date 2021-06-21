@@ -1,4 +1,5 @@
 #![feature(prelude_import)]
+#![feature(bool_to_option)]
 #![cfg_attr(not(feature = "std"), no_std)]
 
 #[macro_use]

@@ -29,7 +29,7 @@ impl<Port: Cc1200Port, Spi: Cc1200Spi<A>, Chip: Cc1200Chip<A>, Al: Alarm<T>, T: 
     pub async fn setup(
         driver: Cc1200Drv<Port, Al, T, A>,
         spi: Arc<Mutex<Spi>>,
-        mut chip: Chip,
+        chip: Chip,
         config: &'static Cc1200Config<'static>,
     ) -> Result<Self, TimeoutError> {
         assert!(config.is_full());

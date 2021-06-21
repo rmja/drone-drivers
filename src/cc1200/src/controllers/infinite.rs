@@ -5,7 +5,7 @@ use drone_core::sync::Mutex;
 use drone_time::{Alarm, Tick, TimeSpan};
 use futures::prelude::*;
 
-use crate::{Cc1200Chip, Cc1200Config, Cc1200Drv, Cc1200Gpio, Cc1200Port, Cc1200Spi, Cc1200Timer, Cc1200Uptime, Rssi, RxFifoOverflowError, State, TimeoutError, TxFifoUnderflowError, drv::TX_FIFO_SIZE, opcode::{Reg, Strobe}, regs::{FifoCfg, Mdmcfg1, PktCfg0, PktCfg2, RfendCfg0, RfendCfg1}};
+use crate::{Cc1200Chip, Cc1200Config, Cc1200Drv, Cc1200Gpio, Cc1200Port, Cc1200Spi, Cc1200Timer, Cc1200Uptime, Rssi, RxFifoOverflowError, State, TimeoutError, TxFifoUnderflowError, drv::TX_FIFO_SIZE, opcode::{Reg, Strobe}, regs::{FifoCfg, Mdmcfg1, PktCfg0, PktCfg1, PktCfg2, RfendCfg0, RfendCfg1}};
 
 /// Asserted when the RX FIFO is filled above FIFO_CFG.FIFO_THR. De-asserted
 /// when the RX FIFO is drained below (or is equal) to the same threshold.
@@ -139,7 +139,7 @@ impl<
         let spi = self.spi.clone();
         let chip = self.chip.clone();
         let driver = self.driver.clone();
-        let fifo_thr = FifoCfg(self.config.reg(Reg::FIFO_CFG).unwrap()).fifo_thr() as usize;
+        let chunk_size = FifoCfg(self.config.reg(Reg::FIFO_CFG).unwrap()).fifo_thr() as usize + 1; // There is one more byte in the RX FIFO than reported by the register value.
         let chunk_stream = fifo_above_thr_stream.then(move |capture| {
             let uptime = uptime.clone();
             let spi = spi.clone();
@@ -155,7 +155,7 @@ impl<
 
                 // Read until data-ready goes low.
                 while timer_pin.get() {
-                    let mut rx_buf = vec![0; fifo_thr];
+                    let mut rx_buf = vec![0; chunk_size];
                     let rssi = driver
                         .read_rssi_and_fifo(&mut *spi, &mut *chip, &mut rx_buf)
                         .await;

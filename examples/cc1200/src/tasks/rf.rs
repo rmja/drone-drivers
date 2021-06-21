@@ -1,5 +1,5 @@
 use alloc::sync::Arc;
-use drone_cc1200_drv::{Cc1200Chip, Cc1200Drv, Cc1200Gpio, Cc1200Port, Cc1200Spi, Cc1200Timer, Cc1200Uptime, RxFifoOverflowError, configs::CC1200_WMBUS_MODECMTO_FULL, controllers::infinite::{InfiniteController, RxChunk}};
+use drone_cc1200_drv::{Cc1200Chip, Cc1200Drv, Cc1200Gpio, Cc1200Port, Cc1200Spi, Cc1200Timer, Cc1200Uptime, RxFifoOverflowError, configs::CC1200_WMBUS_MODECMTO_FULL_INFINITY, controllers::infinite::{InfiniteController, RxChunk}};
 use drone_core::sync::{Mutex, spsc::ring::{SendErrorKind, Sender}};
 use drone_time::Alarm;
 use futures::prelude::*;
@@ -24,7 +24,7 @@ pub async fn handler<
     // Issue hardware reset sequence
     drv.hw_reset(&mut chip).await.unwrap();
 
-    let mut ctrl = InfiniteController::setup(drv, spi, chip, timer, uptime, &CC1200_WMBUS_MODECMTO_FULL, Cc1200Gpio::Gpio0).await.unwrap();
+    let mut ctrl = InfiniteController::setup(drv, spi, chip, timer, uptime, &CC1200_WMBUS_MODECMTO_FULL_INFINITY, Cc1200Gpio::Gpio0).await.unwrap();
     
     loop {
         let mut chunk_stream = ctrl.receive(4).await;

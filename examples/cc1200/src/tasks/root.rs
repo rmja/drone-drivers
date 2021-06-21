@@ -325,7 +325,7 @@ async fn handle(reg: Regs, thr_init: ThrsInit) {
 
         // Let the receiver run until 10 seconds, or until 5 seconds after the last received packet.
         let mut stop = alarm.sleep(TimeSpan::from_secs(120));
-        let mut packet_stream = packet.receive_fixed_length(20).await;
+        let mut packet_stream = packet.receive_variable_length().await;
         // The receiver is started, start waiting for packets.
         while let Either::Left(whoot) = future::select(packet_stream.next(), stop).await {
             stop = alarm.sleep(TimeSpan::from_secs(60));

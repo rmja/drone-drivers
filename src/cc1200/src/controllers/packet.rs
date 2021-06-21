@@ -53,10 +53,12 @@ pub struct Packet<T: Tick> {
     // pub rssi: Rssi,
     /// The received packet bytes.
     pub bytes: Vec<u8>,
+
+    /// The, possibly variable, packet length
+    length: Option<usize>,
 }
 
 struct Receive<Port: Cc1200Port, Spi: Cc1200Spi<A>, Chip: Cc1200Chip<A>, Upt: Cc1200Uptime<T, A>, Al: Alarm<T>, T: Tick, A> {
-    state: AtomicU8,
     driver: Arc<Cc1200Drv<Port, Al, T, A>>,
     spi: Arc<Mutex<Spi>>,
     chip: Arc<RefCell<Chip>>,
@@ -64,12 +66,6 @@ struct Receive<Port: Cc1200Port, Spi: Cc1200Spi<A>, Chip: Cc1200Chip<A>, Upt: Cc
     config: &'static Cc1200Config<'static>,
     event_gpio_iocfg_reg: Reg,
     packet: Mutex<Option<Packet<T>>>,
-}
-
-#[derive(Copy, Clone, PartialEq)]
-enum ReceiveState {
-    WaitingForStartOfFrame,
-    WaitingForEndOfFrame,
 }
 
 impl<
@@ -249,13 +245,21 @@ impl<
 
     /// Start receiver in fixed packet length mode.
     pub async fn receive_fixed_length<'a>(&'a mut self, length: usize) -> PacketStream<'a, T> {
+        self.receive(Some(length)).await
+    }
+
+    /// Start receiver in variable packet length mode where the first byte in the packet specifies the number of consecutive bytes.
+    pub async fn receive_variable_length<'a>(&'a mut self) -> PacketStream<'a, T> {
+        self.receive(None).await
+    }
+
+    async fn receive<'a>(&'a mut self, length: Option<usize>) -> PacketStream<'a, T> {
         let timer_pin = self.timer.pin();
 
         // Start listen for interrupt events before we start the receiver.
         let event_stream = self.timer.rising_edge_capture_overwriting_stream(2);
 
         let receive = Arc::new(Receive {
-            state: AtomicU8::new(0),
             driver: self.driver.clone(),
             spi: self.spi.clone(),
             chip: self.chip.clone(),
@@ -270,16 +274,24 @@ impl<
             let mut spi = self.spi.lock().await;
             let mut chip = self.chip.borrow_mut();
 
-            // Set packet length
-            assert!(length <= 256);
-            self.driver.write_regs(&mut *spi, &mut *chip, Reg::PKT_LEN, &[
-                (length % 256) as u8
-            ]).await;
+            if let Some(length) = length {
+                // Set packet length
+                assert!(length <= 256);
+                self.driver.write_regs(&mut *spi, &mut *chip, Reg::PKT_LEN, &[
+                    (length % 256) as u8
+                ]).await;
 
-            // Use fixed packet length mode.
-            self.driver.write_regs(&mut *spi, &mut *chip, Reg::PKT_CFG0, &[
-                PktCfg0(self.config.reg(Reg::PKT_CFG0).unwrap()).write_length_config(0b00).0, // Fixed packet length mode.
-            ]).await;
+                // Use fixed packet length mode.
+                self.driver.write_regs(&mut *spi, &mut *chip, Reg::PKT_CFG0, &[
+                    PktCfg0(self.config.reg(Reg::PKT_CFG0).unwrap()).write_length_config(0b00).0, // Fixed packet length mode.
+                ]).await;
+            }
+            else {
+                // Use variable packet length mode.
+                self.driver.write_regs(&mut *spi, &mut *chip, Reg::PKT_CFG0, &[
+                    PktCfg0(self.config.reg(Reg::PKT_CFG0).unwrap()).write_length_config(0b01).0, // Variable packet length mode.
+                ]).await;
+            }
 
             // Configure event stream to emit when start of frame is detected.
             receive.set_wait_for_sof(&mut *spi, &mut *chip).await;
@@ -302,45 +314,50 @@ impl<
                 let mut spi = receive.spi.lock().await;
                 let mut chip = receive.chip.borrow_mut();
                 let mut current = receive.packet.try_lock().unwrap();
-                let event_upstamp = receive.uptime.upstamp(capture);
 
                 if current.is_none() {
-                    // There is no current packet - we just detected a Start-Of-Frame.
+                    let event_upstamp = receive.uptime.upstamp(capture);
 
+                    // There is no current packet - we just detected a Start-Of-Frame.
                     receive.set_wait_for_fifo_or_eof(&mut *spi, &mut *chip).await;
 
                     *current = Some(Packet {
                         sof_upstamp: event_upstamp,
-                        bytes: vec![]
+                        bytes: vec![],
+                        length,
                     });
-
-                    None
                 }
-                else {
-                    // We are currently receiving a packet...
-                    let mut packet = current.take().unwrap();
-                    let mut remaining = length + receive.fifo_append_status_bytes().then_some(2).unwrap_or_default() - packet.bytes.len();
 
-                    // Read until data-ready goes low while we still haven't received the entire packet.
-                    while timer_pin.get() && remaining > 0 {
-                        let read_size = receive.driver.read_ext_reg(&mut *spi, &mut *chip, ExtReg::NUM_RXBYTES).await as usize;
-                        let mut rx_buf = vec![0; read_size];
-                        receive.driver.read_fifo(&mut *spi, &mut *chip, &mut rx_buf).await;
+                let mut packet = current.take().unwrap();
 
-                        match receive.driver.last_status().state() {
-                            State::RX => {
-                                remaining -= rx_buf.len();
-                                packet.bytes.append(&mut rx_buf);
-                            }
-                            state => {
-                                panic!("Unrecoverable state {:?}", state);
-                            }
-                        }
+                // Read until there are no more bytes in the fifo.
+                while timer_pin.get() {
+                    // Get the number of bytes that are ready in the fifo.
+                    let read_size = receive.driver.read_ext_reg(&mut *spi, &mut *chip, ExtReg::NUM_RXBYTES).await as usize;
+
+                    // Read out the fifo
+                    let mut rx_buf = vec![0; read_size];
+                    receive.driver.read_fifo(&mut *spi, &mut *chip, &mut rx_buf).await;
+
+                    if packet.length.is_none() {
+                        // Set the packet length from the first byte in the packet
+                        packet.length = Some(rx_buf[0] as usize + 1)
                     }
 
-                    if remaining == 0 {
-                        if receive.fifo_append_status_bytes() {
+                    packet.bytes.append(&mut rx_buf);
+                }
+
+                let has_appended_status_bytes = PktCfg1(receive.config.reg(Reg::PKT_CFG1).unwrap()).append_status();
+
+                match packet.length {
+                    Some(length) if packet.bytes.len() == length + has_appended_status_bytes.then_some(2).unwrap_or_default() => {
+                        // Packet is fully received
+
+                        // Get whether the two status bytes are appended to the packet in the rx fifo
+                        if has_appended_status_bytes {
                             // Remove the status bytes from the received packet bytes
+                            // We just ignore their values for now
+                            // TODO: Use the values
                             packet.bytes.pop();
                             packet.bytes.pop();
                         }
@@ -349,8 +366,8 @@ impl<
                         receive.set_wait_for_sof(&mut *spi, &mut *chip).await;
 
                         Some(packet)
-                    }
-                    else {
+                    },
+                    _ => {
                         // Packet is not yet fully received
                         *current = Some(packet);
                         None
@@ -361,195 +378,6 @@ impl<
 
         PacketStream {
             stream: Box::pin(packet_stream),
-        }
-    }
-
-    pub async fn receive<'a, F: 'a + Fn(&[u8]) -> Option<usize>>(&'a mut self, get_length: F) -> PacketStream<'a, T> {
-        // Start listen for packet detected interrupts before the receiver is started.
-        let timer_pin = self.timer.pin();
-        let fifo_above_thr_stream = self.timer.rising_edge_capture_overwriting_stream(2);
-
-        if let Some(length) = get_length(&[]) {
-            // Fixed length mode
-            let mut spi = self.spi.lock().await;
-            let mut chip = self.chip.borrow_mut();
-
-            // Set pin to be asserted when receiving packet
-            let reg = self.fifo_gpio.iocfg_reg();
-            self.driver.write_regs(&mut *spi, &mut *chip, reg, &[GPIO_CFG_PKT_SYNC_RXTX]).await;
-
-            // Use fixed length packet mode.
-            self.driver.write_regs(&mut *spi, &mut *chip, Reg::PKT_CFG0, &[
-                PktCfg0(self.config.reg(Reg::PKT_CFG0).unwrap()).write_length_config(0b00).0, // Fixed packet length mode.
-            ]).await;
-        }
-        else {
-            let mut spi = self.spi.lock().await;
-            let mut chip = self.chip.borrow_mut();
-
-            // Set pin to be asserted when receiving packet
-            let reg = self.fifo_gpio.iocfg_reg();
-            self.driver.write_regs(&mut *spi, &mut *chip, reg, &[GPIO_CFG_PKT_SYNC_RXTX]).await;
-
-            // Use infinite packet mode.
-            self.driver.write_regs(&mut *spi, &mut *chip, Reg::PKT_CFG0, &[
-                PktCfg0(self.config.reg(Reg::PKT_CFG0).unwrap()).write_length_config(0b10).0, // Infinite packet length mode.
-            ]).await;
-
-            // Flush RX buffer
-            self.driver
-                .strobe(&mut *spi, &mut *chip, Strobe::SFRX)
-                .await;
-
-            // Start receiver.
-            self.driver.strobe(&mut *spi, &mut *chip, Strobe::SRX).await;
-
-            // Do not wait for calibration and settling.
-        }
-
-        let fifo_thr = FifoCfg(self.config.reg(Reg::FIFO_CFG).unwrap()).fifo_thr() as usize;
-
-        const RX_STATE_WAITING_FOR_SOF: u8 = 0;
-        const RX_STATE_RECEIVING_MIN_LENGTH: u8 = 1;
-        const RX_STATE_RECEIVING_TAIL: u8 = 2;
-
-        let uptime = self.uptime.clone();
-        let spi = self.spi.clone();
-        let chip = self.chip.clone();
-        let driver = self.driver.clone();
-        let rx_state = AtomicU8::new(RX_STATE_WAITING_FOR_SOF);
-        let ongoing = Arc::new(Mutex::new(None));
-        // let mut last_upstamp: Option<TimeSpan<T>> = None;
-        // let mut remaining = 0;
-        // let mut packet_bytes = vec![];
-
-        let chunk_stream = fifo_above_thr_stream.then(move |capture| {
-            let uptime = uptime.clone();
-            let spi = spi.clone();
-            let chip = chip.clone();
-            let driver = driver.clone();
-            let ongoing = ongoing.clone();
-            let timer_pin = timer_pin.clone();
-            async move {
-                let mut spi = spi.lock().await;
-                let mut chip = chip.borrow_mut();
-
-                let mut ongoing = ongoing.try_lock().unwrap();
-
-                if ongoing.is_none() { // Ok(RX_STATE_WAITING_FOR_SOF) == rx_state.compare_exchange(RX_STATE_WAITING_FOR_SOF, RX_STATE_RECEIVING_MIN_LENGTH, Ordering::AcqRel, Ordering::Relaxed) {
-                    let upstamp = uptime.upstamp(capture);
-
-                    
-                    *ongoing = Some(Packet {
-                        sof_upstamp: upstamp,
-                        bytes: vec![]
-                    });
-
-                    // Set the FIFO threshold to match min_length
-                    // self.driver.write_regs(&mut *spi, &mut *chip, Reg::FIFO_CFG, &[
-                    //     FifoCfg(self.config.reg(Reg::FIFO_CFG).unwrap()).write_fifo_thr(min_length).0
-                    // ]).await;
-
-                    // Set pin to be asserted when FIFO has min_length bytes or the end of packet is reached.
-                    // let reg = self.fifo_gpio.iocfg_reg();
-                    // driver.write_regs(&mut *spi, &mut *chip, reg, &[GPIO_CFG_RXFIFO_THR_PKT]).await;
-
-                    // None
-                }
-
-                None
-                // else if Ok(RX_STATE_RECEIVING_MIN_LENGTH) == rx_state.compare_exchange(RX_STATE_RECEIVING_MIN_LENGTH, RX_STATE_RECEIVING_TAIL, Ordering::AcqRel, Ordering::Relaxed) {
-                //     let mut rx_buf = vec![0; min_length as usize];
-                //     driver.read_fifo(&mut *spi, &mut *chip, &mut rx_buf).await;
-
-                //     let length = get_length(&rx_buf);
-                //     assert!(length >= min_length as usize);
-                //     remaining = length - min_length as usize;
-
-                //     if remaining == 0 {
-                //         Some(Packet {
-                //             upstamp: last_upstamp.unwrap(),
-                //             bytes: rx_buf,
-                //         })
-                //     }
-                //     else {
-                //         match driver.last_status().state() {
-                //             State::RX => {
-                //                 packet_bytes.reserve(length);
-                //                 packet_bytes.extend_from_slice(&rx_buf);
-
-                //                 // Reconfigure the FIFO threshold
-                //                 // Set the FIFO threshold to use while receiving the remainder of the packet
-                //                 self.driver.write_regs(&mut *spi, &mut *chip, Reg::FIFO_CFG, &[
-                //                     fifo_thr as u8
-                //                 ]).await;
-
-                //                 // Set packet length.
-                //                 self.driver.write_regs(&mut *spi, &mut *chip, Reg::PKT_LEN, &[(length % 256) as u8]).await;
-                //             }
-                //             State::RX_FIFO_ERROR => {
-                //                 // Flush RX buffer
-                //                 driver.strobe(&mut *spi, &mut *chip, Strobe::SFRX).await;
-
-                //                 // Restart receiver.
-                //                 self.driver.strobe(&mut *spi, &mut *chip, Strobe::SRX).await;
-
-                //                 rx_state.store(RX_STATE_WAITING_FOR_SOF, Ordering::Release);
-                //             }
-                //             state => {
-                //                 panic!("Unrecoverable state {:?}", state);
-                //             }
-                //         }
-
-                //         None
-                //     }
-                // }
-                // else {
-                //     // We have either received a FIFO block or the remaining of the packet
-                //     if remaining <= fifo_thr {
-                //         // This is the final receiption
-                //         let mut rx_buf = vec![0; remaining];
-                //         driver.read_fifo(&mut *spi, &mut *chip, &mut rx_buf).await;
-
-                //         rx_state.store(RX_STATE_WAITING_FOR_SOF, Ordering::Release);
-
-                //         Some(Packet {
-                //             upstamp: TimeSpan::ZERO,
-                //             bytes: packet_bytes,
-                //         })
-                //     }
-                //     else {
-                //         // This is just an intermediate FIFO block
-                //         let mut rx_buf = vec![0; fifo_thr as usize];
-                //         driver.read_fifo(&mut *spi, &mut *chip, &mut rx_buf).await;
-
-                //         match driver.last_status().state() {
-                //             State::RX => {
-                //                 packet_bytes.extend_from_slice(&rx_buf);
-                //                 remaining -= fifo_thr;
-                //             }
-                //             State::RX_FIFO_ERROR => {
-                //                 // Flush RX buffer
-                //                 driver.strobe(&mut *spi, &mut *chip, Strobe::SFRX).await;
-
-                //                 // Restart receiver.
-                //                 self.driver.strobe(&mut *spi, &mut *chip, Strobe::SRX).await;
-
-                //                 rx_state.store(RX_STATE_WAITING_FOR_SOF, Ordering::Release);
-                //             }
-                //             state => {
-                //                 panic!("Unrecoverable state {:?}", state);
-                //             }
-                //         }
-
-                //         None
-                //     }
-                // }
-            }
-        }).filter_map(|f| future::ready(f));
-
-        PacketStream {
-            stream: Box::pin(chunk_stream),
         }
     }
 }
@@ -563,32 +391,18 @@ impl<
         T: Tick,
         A,
     > Receive<Port, Spi, Chip, Upt, Al, T, A> {
-
-    fn state(&self) -> ReceiveState {
-        unsafe { mem::transmute(self.state.load(Ordering::Acquire)) }
-    }
-
-    /// Get whether the two status bytes are appended to the packet in the rx fifo
-    fn fifo_append_status_bytes(&self) -> bool {
-        PktCfg1(self.config.reg(Reg::PKT_CFG1).unwrap()).append_status()
-    }
-
     /// Transition to `ReceiveState::WaitingForStartOfFrame`.
     async fn set_wait_for_sof(&self, spi: &mut Spi, chip: &mut Chip) {
         // Set event pin to be asserted when syncword is detected (and deasserted when eof is detected)
         self.driver.write_regs(&mut *spi, &mut *chip, self.event_gpio_iocfg_reg, &[
             GPIO_CFG_PKT_SYNC_RXTX
         ]).await;
-
-        self.state.store(ReceiveState::WaitingForStartOfFrame as u8, Ordering::Release);
     }
 
     /// Transition to `ReceiveState::WaitingForEndOfFrame`.
     async fn set_wait_for_fifo_or_eof(&self, spi: &mut Spi, chip: &mut Chip) {
         // Configure the event stream to emit when the fifo threshold is reached or the packet is fully received.
         self.driver.write_regs(&mut *spi, &mut *chip, self.event_gpio_iocfg_reg, &[GPIO_CFG_RXFIFO_THR_PKT]).await;
-
-        self.state.store(ReceiveState::WaitingForEndOfFrame as u8, Ordering::Release);
     }
 }
 

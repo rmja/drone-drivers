@@ -23,7 +23,7 @@ use crate::{
 ///     SYNC2          0x3D
 ///     SYNC1          0x54
 ///     SYNC0          0x3D
-///     SYNC_CFG1      0xAB  32 bit syncword
+///     SYNC_CFG1      0xA8  32 bit syncword
 ///     PREAMBLE_CFG1  0x19  4 byte AA style preamble
 ///     MDMCFG1        0x42  FIFO enabled
 ///     FIFO_CFG       0x0F  16 bytes FIFO threshold
@@ -42,7 +42,7 @@ pub const CC1200_WMBUS_MODECMTO_FULL_PACKET: Cc1200Config = Cc1200Config {
         0x3D, // SYNC2                 Sync Word Configuration [23:16]
         0x54, // SYNC1                 Sync Word Configuration [15:8]
         0x3D, // SYNC0                 Sync Word Configuration [7:0]
-        0xAB, // SYNC_CFG1             Sync Word Detection Configuration Reg. 1
+        0xA8, // SYNC_CFG1             Sync Word Detection Configuration Reg. 1
         0x23, // SYNC_CFG0             Sync Word Detection Configuration Reg. 0
         0x27, // DEVIATION_M           Frequency Deviation Configuration
         0x04, // MODCFG_DEV_E          Modulation Format and Frequency Deviation Configur..

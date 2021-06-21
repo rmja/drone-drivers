@@ -133,6 +133,26 @@ impl<Port: Cc1200Port, Al: Alarm<T>, T: Tick, A> Cc1200Drv<Port, Al, T, A> {
         chip.deselect();
     }
 
+    /// Read an extended register value from chip.
+    /// This action _does_ update `last_status`.
+    pub async fn read_ext_reg<Spi: Cc1200Spi<A>, Chip: Cc1200Chip<A>>(
+        &self,
+        spi: &mut Spi,
+        chip: &mut Chip,
+        reg: ExtReg,
+    ) -> u8 {
+        let opcode = Opcode::ReadSingle(Reg::EXTENDED_ADDRESS);
+        let tx = &[opcode.val(), reg as u8, 0];
+        let mut rx_buf = [0, 0, 0];
+
+        chip.select();
+        spi.xfer(tx, &mut rx_buf).await;
+        self.status.set(StatusByte(rx_buf[0]));
+        chip.deselect();
+
+        rx_buf[2]
+    }
+
     /// Read a sequence of extended register values from chip.
     /// This action _does_ update `last_status`.
     pub async fn read_ext_regs<Spi: Cc1200Spi<A>, Chip: Cc1200Chip<A>>(

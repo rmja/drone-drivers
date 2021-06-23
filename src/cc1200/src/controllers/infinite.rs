@@ -103,7 +103,6 @@ impl<
     /// Note that the receiver is _not_ stopped when the stream is dropped, so idle() must be called manually after the stream is dropped.
     pub async fn receive<'a>(
         &'a mut self,
-        capacity: usize,
     ) -> ChunkStream<'a, T> {
         let timer_pin = self.timer.pin();
         // Start listen for fifo interrupts before the receiver is started.
@@ -173,8 +172,11 @@ impl<
                         State::RX_FIFO_ERROR => {
                             results.push(Err(RxFifoOverflowError));
 
-                            // Flush RX buffer
+                            // Flush RX buffer (flushing the fifo lets the chip enter the idle state)
                             driver.strobe(&mut *spi, &mut *chip, Strobe::SFRX).await;
+
+                            // Re-start receiver
+                            driver.strobe(&mut *spi, &mut *chip, Strobe::SRX).await;
                         }
                         state => {
                             panic!("Unrecoverable state {:?}", state);

@@ -5,10 +5,8 @@ use core::{pin::Pin, task::Poll};
 use crate::{consts, thr, thr::ThrsInit, Regs, tasks};
 use alloc::sync::Arc;
 use drone_cc1200_drv::{Cc1200Drv, Cc1200Gpio, configs::{CC1200_WMBUS_MODECMTO_FULL_INFINITY, CC1200_WMBUS_MODECMTO_FULL_PACKET}, controllers::{debug::DebugController, infinite::InfiniteController, packet::PacketController}};
-use drone_core::{log, sync::Mutex};
-use drone_cortexm::{
-    drv::sys_tick::SysTick, periph_sys_tick, reg::prelude::*, swo, thr::prelude::*,
-};
+use drone_core::{fib, log, sync::Mutex};
+use drone_cortexm::{drv::sys_tick::SysTick, periph_sys_tick, processor::spin, reg::prelude::*, swo, thr::prelude::*};
 use drone_stm32_map::periph::{
     dma::{
         periph_dma1,periph_dma1_ch5,periph_dma1_ch6,
@@ -17,8 +15,10 @@ use drone_stm32_map::periph::{
     exti::periph_exti6,
     gpio::{
         periph_gpio_a2, periph_gpio_a3, periph_gpio_a5, periph_gpio_a6, periph_gpio_a7, periph_gpio_a_head, periph_gpio_b0,
-        periph_gpio_b8, periph_gpio_b_head, periph_gpio_d12, periph_gpio_d_head, periph_gpio_i1,
-        periph_gpio_i_head,
+        periph_gpio_b8, periph_gpio_b_head, periph_gpio_d12, periph_gpio_d_head, periph_gpio_i1,periph_gpio_b10,
+        periph_gpio_h10,
+        periph_gpio_i3,
+        periph_gpio_i_head,periph_gpio_h_head,
     },
     spi::periph_spi1,
     tim::{periph_tim2, periph_tim4},
@@ -37,7 +37,7 @@ use drone_time::{prelude::*, AlarmDrv, TimeSpan, UptimeDrv};
 use futures::{Future, future::{self, Either}};
 use futures::prelude::*;
 
-const EXAMPLE_TYPE: u32 = 1;
+const EXAMPLE_TYPE: u32 = 0;
 
 /// The root task handler.
 #[inline(never)]
@@ -58,6 +58,7 @@ async fn handle(reg: Regs, thr_init: ThrsInit) {
     thr.tim2.enable_int();
     thr.tim4.enable_int();
     thr.spi1.enable_int();
+    thr.usart2.enable_int();
     thr.dma1_ch5.enable_int();
     thr.dma1_ch6.enable_int();
     thr.dma2_ch2.enable_int();
@@ -65,6 +66,12 @@ async fn handle(reg: Regs, thr_init: ThrsInit) {
 
     thr.rf.enable_int();
     thr.framesync.enable_int();
+    thr.forwarder.enable_int();
+
+    // Let app threads have lowest priority
+    thr.rf.set_priority(15 << 4);
+    thr.framesync.set_priority(15 << 4);
+    thr.forwarder.set_priority(15 << 4);
 
     // Initialize clocks.
     let rcc = Rcc::init(RccSetup::new(periph_rcc!(reg), thr.rcc));
@@ -89,6 +96,7 @@ async fn handle(reg: Regs, thr_init: ThrsInit) {
     let gpio_a = GpioHead::with_enabled_clock(periph_gpio_a_head!(reg));
     let gpio_b = GpioHead::with_enabled_clock(periph_gpio_b_head!(reg));
     let gpio_d = GpioHead::with_enabled_clock(periph_gpio_d_head!(reg));
+    let gpio_h = GpioHead::with_enabled_clock(periph_gpio_h_head!(reg));
     let gpio_i = GpioHead::with_enabled_clock(periph_gpio_i_head!(reg));
 
     // Configure SPI GPIO pins.
@@ -129,6 +137,21 @@ async fn handle(reg: Regs, thr_init: ThrsInit) {
 
     let miso_pin_reset = unsafe { miso_pin.clone() };
 
+    // Thread work indicator pins
+    let forwarder_busy = gpio_b
+        .pin(periph_gpio_b10!(reg))
+        .into_output()
+        .into_pushpull();
+    let framesync_busy = gpio_h
+        .pin(periph_gpio_h10!(reg))
+        .into_output()
+        .into_pushpull();
+    let rf_busy = gpio_i
+        .pin(periph_gpio_i3!(reg))
+        .into_output()
+        .into_pushpull();
+
+
     // Initialize exti.
     let syscfg = Syscfg::with_enabled_clock(periph_syscfg!(reg));
     let exti6 = Arc::new(ExtiDrv::new(periph_exti6!(reg), thr.exti9_5, &syscfg).into_falling_edge());
@@ -161,10 +184,9 @@ async fn handle(reg: Regs, thr_init: ThrsInit) {
     let uart_pins = uart::UartPins::default()
         .tx(pin_uart_tx)
         .rx(pin_uart_rx);
-    let setup = uart::UartSetup::init(periph_usart2!(reg), thr.usart2, pclk1);
-    let uart_drv = uart::UartDrv::init(setup);
-    // let mut uart_rx_drv = uart_drv.init_rx(uart_rx_dma, &uart_pins);
-    let mut uart_tx_drv = Arc::new(uart_drv.init_tx(uart_tx_dma, &uart_pins));
+    let mut setup = uart::UartSetup::init(periph_usart2!(reg), thr.usart2, pclk1);
+    setup.baud_rate = uart::BaudRate::Nominal(115200);
+    let mut uart_tx_drv = uart::UartDrv::init(setup).into_tx(uart_tx_dma,  &uart_pins);
 
     let mut cc1200_cs = SpiChip::new_deselected(cs_pin);
 
@@ -219,6 +241,7 @@ async fn handle(reg: Regs, thr_init: ThrsInit) {
         thr.tim2,
         consts::Tim2Tick,
     );
+
     let alarm = Arc::new(AlarmDrv::new(tim2.counter, tim2.ch1, consts::Tim2Tick));
 
     reset_pin.set();
@@ -251,9 +274,9 @@ async fn handle(reg: Regs, thr_init: ThrsInit) {
         let (rf_tx, rf_rx) = drone_core::sync::spsc::ring::channel(10);
         let (packet_tx, packet_rx) = drone_core::sync::spsc::ring::channel(10);
 
-        thr.rf.exec_factory(move || tasks::rf(port, alarm.clone(), spi.clone(), cc1200_cs, tim4.ch1, uptime, rf_tx));
-        thr.framesync.exec_factory(move || tasks::framesync(rf_rx, packet_tx));
-        // thr.forwarder.exec_factory(move || tasks::forwarder(packet_rx, uart_tx_drv.clone()));
+        thr.forwarder.exec_factory(move || tasks::forwarder(packet_rx, uart_tx_drv, forwarder_busy));
+        thr.framesync.exec_factory(move || tasks::framesync(rf_rx, packet_tx, framesync_busy));
+        thr.rf.exec_factory(move || tasks::rf(port, alarm.clone(), spi.clone(), cc1200_cs, tim4.ch1, uptime, rf_tx, rf_busy));
     }
     else {
         // SIMPLE EXAMPLES BELOW
@@ -262,7 +285,7 @@ async fn handle(reg: Regs, thr_init: ThrsInit) {
         // Issue the hardware reset sequence
         cc1200.hw_reset(&mut cc1200_cs).await.unwrap();
 
-        // Debug controller example:
+        // DEBUG CONTROLLER EXAMPLE
         // let mut debug = DebugController::setup(cc1200, spi.clone(), cc1200_cs, &CC1200_WMBUS_MODECMTO_FULL_INFINITY).await.unwrap();
         // debug.tx_unmodulated().await;
         // alarm.sleep(TimeSpan::from_secs(3)).await;
@@ -274,7 +297,7 @@ async fn handle(reg: Regs, thr_init: ThrsInit) {
         // let (cc1200, cc1200_cs) = debug.release();
 
 
-        // Infinite controller example
+        // INFINITE CONTROLLER EXAMPLE
         // let mut infinite = InfiniteController::setup(
         //     cc1200,
         //     spi.clone(),
@@ -286,11 +309,10 @@ async fn handle(reg: Regs, thr_init: ThrsInit) {
         // )
         // .await
         // .unwrap();
-
         // let mut count: i32 = 0;
-        // let mut chunk_stream = infinite.receive(1).await;
-        // while let Some(whoot) = chunk_stream.next().await {
-        //     // println!("{:?}", whoot.upstamp);
+        // let mut chunk_stream = infinite.receive().await;
+        // while let Some(chunk) = chunk_stream.next().await {
+        //     // println!("{:?}", chunk.upstamp);
         //     count += 1;
 
         //     if count == 10000 {
@@ -301,6 +323,8 @@ async fn handle(reg: Regs, thr_init: ThrsInit) {
         // infinite.idle().await;
         // let (cc1200, cc1200_cs, tim4ch1) = infinite.release();
 
+
+        // PACKET CONTROLLER EXAMPLE
         let mut packet = PacketController::setup(
             cc1200,
             spi.clone(),
@@ -327,7 +351,7 @@ async fn handle(reg: Regs, thr_init: ThrsInit) {
         let mut stop = alarm.sleep(TimeSpan::from_secs(120));
         let mut packet_stream = packet.receive_variable_length().await;
         // The receiver is started, start waiting for packets.
-        while let Either::Left(whoot) = future::select(packet_stream.next(), stop).await {
+        while let Either::Left(packet) = future::select(packet_stream.next(), stop).await {
             stop = alarm.sleep(TimeSpan::from_secs(60));
         }
 

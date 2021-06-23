@@ -42,6 +42,7 @@ thr::nvic! {
 
             19: pub rf; // CAN1_TX
             20: pub framesync;
+            21: pub forwarder;
         }
     };
 }

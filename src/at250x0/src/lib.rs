@@ -1,4 +1,3 @@
-#![feature(const_fn)]
 #![feature(prelude_import)]
 #![cfg_attr(not(feature = "std"), no_std)]
 

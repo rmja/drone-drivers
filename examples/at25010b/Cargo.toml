@@ -4,8 +4,7 @@
 name = "at25010b"
 version = "0.1.0"
 authors = ["Rasmus Melchior Jacobsen <rmja@laesoe.org>"]
-edition = "2018"
-resolver = "2"
+edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

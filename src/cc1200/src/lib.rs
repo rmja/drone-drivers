@@ -15,6 +15,7 @@ mod opcode;
 mod regs;
 mod statusbyte;
 mod gpio;
+pub mod gpiocfg;
 
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub enum Cc1200PartNumber {

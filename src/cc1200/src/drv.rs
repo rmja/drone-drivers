@@ -44,7 +44,7 @@ impl<Port: Cc1200Port, Al: Alarm<T>, T: Tick, A> Cc1200Drv<Port, Al, T, A> {
             port: RefCell::new(port),
             alarm,
             status: Cell::new(StatusByte(0)),
-            rssi_offset: Rssi(0),
+            rssi_offset: Rssi(-99), // Default offset defined in users guide
             tick: PhantomData,
             adapter: PhantomData,
         }
